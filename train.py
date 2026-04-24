@@ -162,6 +162,33 @@ def moving_average_baseline(device: torch.device) -> float:
     return mae
 
 
+# if __name__ == '__main__':
+#     device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
+#     print(f"Using device: {device}")
+
+#     # Baseline first
+#     baseline_mae = moving_average_baseline(device)
+
+#     # Train both models
+#     lstm_results = train_model('lstm', CONFIG, device)
+#     gru_results  = train_model('gru',  CONFIG, device)
+
+#     # Summary
+#     print(f"\n{'='*50}")
+#     print(f"SUMMARY")
+#     print(f"{'='*50}")
+#     print(f"Baseline MAE:  {baseline_mae:.6f}")
+#     print(f"LSTM MAE:      {lstm_results['test_mae']:.6f}")
+#     print(f"GRU MAE:       {gru_results['test_mae']:.6f}")
+
+#     lstm_improvement = (baseline_mae - lstm_results['test_mae']) / baseline_mae * 100
+#     gru_improvement  = (baseline_mae - gru_results['test_mae'])  / baseline_mae * 100
+#     print(f"LSTM improvement over baseline: {lstm_improvement:.1f}%")
+#     print(f"GRU improvement over baseline:  {gru_improvement:.1f}%")
+
+#     CONFIG_LSTM_HIGH_DROPOUT = {**CONFIG, 'num_layers': 2, 'dropout': 0.4}
+#     CONFIG_LSTM_SMALL = {**CONFIG, 'num_layers': 2, 'hidden_size': 32}
+
 if __name__ == '__main__':
     device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
     print(f"Using device: {device}")
