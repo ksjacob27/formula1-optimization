@@ -19,7 +19,14 @@ def load_race(year: int, round_number: int) -> pd.DataFrame:
     session = fastf1.get_session(year, round_number, 'R')
     session.load(telemetry=False, weather=True, messages=False)
 
-    laps = session.laps.pick_quicklaps()
+    # laps = session.laps.pick_quicklaps()
+    # pick_quicklaps removes any lap >107% of fastest, which strips out the
+    # slow degraded laps just before a pit — exactly the signal we need to learn.
+    # New filtering: keep all green-flag racing laps, drop only anomalies.
+    laps = session.laps
+    laps = laps[laps['IsAccurate'] == True]              # valid timing data
+    laps = laps[laps['TrackStatus'] == '1']              # entirely green-flag (no SC/VSC/yellow/red)
+    laps = laps[laps['PitInTime'].isna()]                # drop pit-in laps (driver lifts to enter pit)
 
     # Filter to dry compounds only (scope of project)
     laps = laps[laps['Compound'].isin(['SOFT', 'MEDIUM', 'HARD'])]

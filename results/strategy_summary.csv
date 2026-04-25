@@ -1,6 +1,6 @@
 year,round,driver,predicted_pit,actual_pits,closest_actual,error_laps,within_2_laps
-2024,1,VER,35,"[np.int64(19), np.int64(39)]",39,4,False
+2024,1,VER,32,"[np.int64(19), np.int64(39)]",39,7,False
 2024,2,VER,13,[np.int64(10)],10,3,False
 2024,3,NOR,35,"[np.int64(16), np.int64(42)]",42,7,False
-2024,4,VER,16,"[np.int64(18), np.int64(36)]",18,2,True
-2024,5,VER,20,[np.int64(15)],15,5,False
+2024,4,VER,31,"[np.int64(18), np.int64(36)]",36,5,False
+2024,5,VER,18,[np.int64(15)],15,3,False

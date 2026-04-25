@@ -40,7 +40,13 @@ def prepare_race(year: int, round_number: int, driver: str) -> pd.DataFrame:
     session = fastf1.get_session(year, round_number, 'R')
     session.load(telemetry=False, weather=True, messages=False)
 
-    laps = session.laps.pick_quicklaps()
+    # laps = session.laps.pick_quicklaps()
+    # match training-time filtering: keep slow degraded end-of-stint laps,
+    # drop only anomalous laps (SC/VSC/red flag, broken timing, pit-in laps)
+    laps = session.laps
+    laps = laps[laps['IsAccurate'] == True]
+    laps = laps[laps['TrackStatus'] == '1']
+    laps = laps[laps['PitInTime'].isna()]
     laps = laps[laps['Compound'].isin(['SOFT', 'MEDIUM', 'HARD'])]
     laps = laps[laps['Driver'] == driver].sort_values('LapNumber').reset_index(drop=True)
 

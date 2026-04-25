@@ -43,6 +43,26 @@ FastF1's `pick_quicklaps()` removes laps that are statistical outliers — typic
 
 **Important consequence for this project:** After `pick_quicklaps()`, the first observable lap after a pit stop has TyreLife=2 or TyreLife=3 (not TyreLife=1), because TyreLife=1 (the out-lap) was filtered out. This caused a bug in pit stop detection that was fixed later (see Bugs section).
 
+**Used in Runs 1–2.** For Run 3 and onwards, `pick_quicklaps()` was replaced with explicit filtering (see Run 3 notes).
+
+### Run 3 Filtering Change
+In Run 3, `pick_quicklaps()` was replaced with three explicit filters to preserve the slow degraded laps at the end of stints — the hypothesis being that this signal is critical for the pit window optimizer:
+
+```python
+# pick_quicklaps() — removes outlier laps including slow end-of-stint laps (used in Runs 1–2)
+# laps = session.laps.pick_quicklaps()
+
+# Explicit filtering (Run 3+): keeps slow degraded laps; only removes known artifacts
+laps = session.laps
+laps = laps[laps['IsAccurate'] == True]     # valid timing data only
+laps = laps[laps['TrackStatus'] == '1']     # entirely green-flag (filters SC/VSC/yellow/red)
+laps = laps[laps['PitInTime'].isna()]       # drop pit-in laps (driver lifts to enter pit)
+```
+
+This change was **also applied in `strategy/pit_optimizer.py`'s `prepare_race()`** so that the strategy evaluation uses the same data distribution as training.
+
+The same change removed out-laps (TyreLife=1) implicitly: PitInTime.isna() drops the in-lap; FastF1 doesn't record an out-lap row with PitInTime filled, but the very first lap of a new stint (TyreLife=1) often has TrackStatus != '1' because the pit lane has no TrackStatus — it varies. In practice the out-lap appears to still be present in the filtered data.
+
 ### Feature Engineering
 | Feature | Description | How Computed |
 |---------|-------------|-------------|
