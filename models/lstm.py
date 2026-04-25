@@ -74,14 +74,50 @@ class TireGRU(nn.Module):
         return out.squeeze(-1)
 
 
+class TireLSTMAttention(nn.Module):
+    def __init__(
+        self,
+        input_size: int = 8,
+        hidden_size: int = 64,
+        num_layers: int = 2,
+        dropout: float = 0.2
+    ):
+        super(TireLSTMAttention, self).__init__()
+
+        self.lstm = nn.LSTM(
+            input_size=input_size,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            dropout=dropout if num_layers > 1 else 0.0,
+            batch_first=True
+        )
+
+        # scores each timestep — softmax gives attention weights
+        self.attention = nn.Linear(hidden_size, 1)
+        self.dropout   = nn.Dropout(dropout)
+        self.fc        = nn.Linear(hidden_size, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (batch, seq_len, input_size)
+        out, _ = self.lstm(x)                          # (batch, seq_len, hidden)
+
+        scores  = self.attention(out)                  # (batch, seq_len, 1)
+        weights = torch.softmax(scores, dim=1)         # (batch, seq_len, 1)
+        context = (weights * out).sum(dim=1)           # (batch, hidden)
+
+        context = self.dropout(context)
+        return self.fc(context).squeeze(-1)
+
+
 def get_model(model_type: str, **kwargs) -> nn.Module:
     """
     Factory function to instantiate a model by name.
     Usage: model = get_model('lstm') or get_model('gru')
     """
     models = {
-        'lstm': TireLSTM,
-        'gru':  TireGRU
+        'lstm':          TireLSTM,
+        'gru':           TireGRU,
+        'lstm_attention': TireLSTMAttention,
     }
     if model_type not in models:
         raise ValueError(f"Unknown model type '{model_type}'. Choose from {list(models.keys())}")

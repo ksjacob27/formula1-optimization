@@ -35,11 +35,14 @@ def load_data(device: torch.device) -> tuple:
 def train_model(
     model_type: str,
     config: dict,
-    device: torch.device
+    device: torch.device,
+    run_name: str = None
 ) -> dict:
 
+    name = run_name or model_type
+
     print(f"\n{'='*50}")
-    print(f"Training {model_type.upper()}")
+    print(f"Training {name.upper()}")
     print(f"{'='*50}")
 
     # Load data
@@ -114,7 +117,7 @@ def train_model(
             best_val_loss = val_loss
             patience_count = 0
             torch.save(model.state_dict(),
-                       RESULTS_DIR / f'best_{model_type}.pt')
+                       RESULTS_DIR / f'best_{name}.pt')
         else:
             patience_count += 1
             if patience_count >= config['patience']:
@@ -122,18 +125,19 @@ def train_model(
                 break
 
     # Evaluate on test set
-    model.load_state_dict(torch.load(RESULTS_DIR / f'best_{model_type}.pt'))
+    model.load_state_dict(torch.load(RESULTS_DIR / f'best_{name}.pt'))
     model.eval()
     with torch.no_grad():
         test_preds = model(X_test)
         test_mae   = torch.mean(torch.abs(test_preds - y_test)).item()
         test_mse   = torch.mean((test_preds - y_test) ** 2).item()
 
-    print(f"\n{model_type.upper()} Test MAE: {test_mae:.6f}")
-    print(f"{model_type.upper()} Test MSE: {test_mse:.6f}")
+    print(f"\n{name.upper()} Test MAE: {test_mae:.6f}")
+    print(f"{name.upper()} Test MSE: {test_mse:.6f}")
 
     results = {
         'model_type':   model_type,
+        'run_name':     name,
         'test_mae':     test_mae,
         'test_mse':     test_mse,
         'best_val_loss': best_val_loss,
@@ -142,7 +146,7 @@ def train_model(
     }
 
     # Save results
-    with open(RESULTS_DIR / f'results_{model_type}.json', 'w') as f:
+    with open(RESULTS_DIR / f'results_{name}.json', 'w') as f:
         json.dump(results, f, indent=2)
 
     return results
@@ -193,35 +197,28 @@ if __name__ == '__main__':
     device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
     print(f"Using device: {device}")
 
-    # Baseline first
     baseline_mae = moving_average_baseline(device)
 
-    # Train original models
-    lstm_results = train_model('lstm', CONFIG, device)
-    gru_results  = train_model('gru',  CONFIG, device)
+    EXPERIMENTS = {
+        'lstm_baseline':     ('lstm',           {**CONFIG, 'hidden_size': 64,  'num_layers': 2, 'dropout': 0.2}),
+        'lstm_large':        ('lstm',           {**CONFIG, 'hidden_size': 128, 'num_layers': 2, 'dropout': 0.2}),
+        'lstm_deep':         ('lstm',           {**CONFIG, 'hidden_size': 64,  'num_layers': 3, 'dropout': 0.3}),
+        'lstm_high_dropout': ('lstm',           {**CONFIG, 'hidden_size': 64,  'num_layers': 2, 'dropout': 0.4}),
+        'lstm_attention':    ('lstm_attention', {**CONFIG, 'hidden_size': 64,  'num_layers': 2, 'dropout': 0.2}),
+        'gru_baseline':      ('gru',            {**CONFIG, 'hidden_size': 64,  'num_layers': 2, 'dropout': 0.2}),
+    }
 
-    # LSTM experiments
-    CONFIG_LSTM_HIGH_DROPOUT = {**CONFIG, 'num_layers': 2, 'dropout': 0.4}
-    CONFIG_LSTM_SMALL        = {**CONFIG, 'num_layers': 2, 'hidden_size': 32}
+    all_results = {}
+    for run_name, (model_type, cfg) in EXPERIMENTS.items():
+        all_results[run_name] = train_model(model_type, cfg, device, run_name=run_name)
 
-    lstm_dropout_results = train_model('lstm', CONFIG_LSTM_HIGH_DROPOUT, device)
-    lstm_small_results   = train_model('lstm', CONFIG_LSTM_SMALL, device)
-
-    # Summary
     print(f"\n{'='*50}")
     print(f"SUMMARY")
     print(f"{'='*50}")
-    print(f"Baseline MAE:             {baseline_mae:.6f}")
-    print(f"LSTM MAE:                 {lstm_results['test_mae']:.6f}")
-    print(f"GRU MAE:                  {gru_results['test_mae']:.6f}")
-    print(f"LSTM high dropout MAE:    {lstm_dropout_results['test_mae']:.6f}")
-    print(f"LSTM small hidden MAE:    {lstm_small_results['test_mae']:.6f}")
-
-    for name, mae in [
-        ('LSTM', lstm_results['test_mae']),
-        ('GRU', gru_results['test_mae']),
-        ('LSTM high dropout', lstm_dropout_results['test_mae']),
-        ('LSTM small hidden', lstm_small_results['test_mae']),
-    ]:
+    print(f"{'Run':<22} {'MAE':>10} {'Improvement':>14}")
+    print(f"{'-'*48}")
+    print(f"{'Baseline (moving avg)':<22} {baseline_mae:>10.6f} {'—':>14}")
+    for run_name, results in all_results.items():
+        mae = results['test_mae']
         improvement = (baseline_mae - mae) / baseline_mae * 100
-        print(f"{name} improvement over baseline: {improvement:.1f}%")
+        print(f"{run_name:<22} {mae:>10.6f} {improvement:>+13.1f}%")

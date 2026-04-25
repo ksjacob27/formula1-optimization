@@ -88,7 +88,8 @@ def save_season(year: int, max_rounds: int = 22) -> None:
 
 
 if __name__ == '__main__':
+    save_season(2022)
     save_season(2023)
-    save_season(2024, max_rounds=5) 
+    save_season(2024, max_rounds=5)
 
 

@@ -53,12 +53,14 @@ def normalize_race(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     return df, scalers
 
 
-def process_split(parquet_path: Path, split_name: str) -> None:
+def process_split(parquet_paths: Path | list[Path], split_name: str) -> None:
     """
-    Load a season parquet, build sequences per driver per stint,
+    Load one or more season parquets, build sequences per driver per stint,
     normalize per race, and save tensors.
     """
-    df = pd.read_parquet(parquet_path)
+    if isinstance(parquet_paths, Path):
+        parquet_paths = [parquet_paths]
+    df = pd.concat([pd.read_parquet(p) for p in parquet_paths], ignore_index=True)
     all_X, all_y = [], []
 
     for (year, round_num), race_df in df.groupby(['Year', 'Round']):
@@ -118,7 +120,9 @@ def detect_stints(driver_df: pd.DataFrame) -> list[pd.DataFrame]:
 
 
 if __name__ == '__main__':
-    process_split(DATA_RAW / 'season_2023.parquet', 'train')
+    # process_split(DATA_RAW / 'season_2023.parquet', 'train')
+    # combined 2022 + 2023 for larger training set
+    process_split([DATA_RAW / 'season_2022.parquet', DATA_RAW / 'season_2023.parquet'], 'train')
     process_split(DATA_RAW / 'season_2024.parquet', 'test')
     print("\nPreprocessing complete.")
     print(f"Files saved to {DATA_PROC}")
