@@ -94,12 +94,13 @@ Fuel load is estimated rather than measured. Real F1 teams know the exact fuel l
 - **Sample format:** X shape `(10, 8)` — 10 consecutive laps, 8 features each. y shape `(1,)` — the LapTimeSeconds value on lap 11 (the next lap after the window).
 
 ### Train/Test Data Sizes
-| Version | Training Data | Training Sequences | Test Sequences |
-|---------|--------------|-------------------|----------------|
-| v1 (initial) | 2023 only | ~14,000 | 3,242 |
-| v2 (current) | 2022 + 2023 | 28,115 | 3,242 |
+| Version | Training Data | Training Sequences | Notes |
+|---------|--------------|-------------------|-------|
+| v1 | 2023 only (pick_quicklaps) | ~14,000 | Runs 1 |
+| v2 | 2022 + 2023 (pick_quicklaps) | 28,115 | Runs 2 |
+| v3 | 2022 + 2023 (TrackStatus='1') | 28,981 | Run 3 — test distribution also changed |
 
-Doubling the training set by adding 2022 data significantly changed which model architectures worked (see Experiment Results).
+Doubling the training set by adding 2022 data significantly changed which model architectures worked (see Experiment Results). The v3 filtering change produced slightly more training sequences overall but a different test distribution — Run 3 results cannot be directly compared to Runs 1–2.
 
 ---
 
@@ -250,6 +251,60 @@ The `lstm_deep` result is the most informative: doubling the data turned a negat
 
 ---
 
+### Run 3 — Safety car filtering (TrackStatus='1') on 2022+2023 data
+
+**Hypothesis:** `pick_quicklaps()` was stripping the slow, degraded laps at the end of stints — the very signal the optimizer needs to detect that a driver should pit. Replacing it with explicit TrackStatus/IsAccurate/PitInTime filtering would preserve those laps, reduce the systematic late-prediction bias, and improve strategy accuracy.
+
+**What changed:** `pick_quicklaps()` replaced by three explicit filters in both `data/pipeline.py` and `strategy/pit_optimizer.py`. Data was re-fetched and re-preprocessed.
+
+**New data sizes after re-fetch:**
+| Season | Laps | Change |
+|--------|------|--------|
+| 2022 | 17,163 | +513 vs Run 2 |
+| 2023 | 20,004 | +414 vs Run 2 |
+| 2024 (rounds 1–5) | 4,168 | ~same |
+| Training sequences | 28,981 | +866 vs Run 2 |
+
+**Moving average baseline MAE: 0.060526** (down from 0.095744 in Runs 1–2). The test set changed because 2024 laps are now filtered by TrackStatus='1' too — fewer safety car laps means the remaining laps are closer to typical race pace, reducing baseline variance. Improvement percentages below are relative to the new 0.060526 baseline and **cannot be directly compared** to Run 1/2 percentages.
+
+#### Full Results Table
+| Run | hidden | layers | dropout | Test MAE | Test MSE | vs Baseline (new) |
+|-----|--------|--------|---------|----------|----------|-------------------|
+| lstm_baseline | 64 | 2 | 0.2 | 0.111593 | — | -84.4% |
+| lstm_large | 128 | 2 | 0.2 | 0.084005 | — | -38.8% |
+| lstm_deep | 64 | 3 | 0.3 | 0.094183 | — | -55.6% |
+| lstm_high_dropout | 64 | 2 | 0.4 | 0.046429 | — | +23.3% |
+| lstm_attention | 64 | 2 | 0.2 | 0.105996 | — | -75.1% |
+| **gru_baseline** | **64** | **2** | **0.2** | **0.036339** | **0.004397** | **+40.0%** |
+
+#### Key Observations — Run 3
+- **Nearly all LSTM variants degraded sharply** (negative improvement percentages). The new data distribution is harder to learn from — preserving end-of-stint slow laps adds high-variance samples that LSTM struggles to model.
+- **lstm_high_dropout (+23.3%):** The one LSTM that remained positive, again vindicating the importance of regularization. High dropout prevents overfitting to the noisy slow-lap tail.
+- **gru_baseline (+40.0%):** GRU remained strong and matched its Run 1–2 performance almost exactly (~+39–40% across all three runs). Its simpler gating is robust to the changed data distribution.
+- **The baseline itself changed (0.060526 vs 0.095744):** This makes cross-run comparisons unreliable in percentage terms. In absolute MAE, GRU improved: 0.0589 (Run 2) → 0.0363 (Run 3). But this partly reflects an easier test set, not purely a better model.
+
+#### Strategy Evaluation — Run 3 vs Run 2
+
+| Round | Circuit | Driver | Run 2 Predicted | Run 3 Predicted | Actual | Run 2 Error | Run 3 Error |
+|-------|---------|--------|-----------------|-----------------|--------|-------------|-------------|
+| R1 | Bahrain | VER | 35 | 32 | 19 / 39 | 4 ✗ | 7 ✗ |
+| R2 | Saudi Arabia | VER | 13 | 13 | 10 | 3 ✗ | 3 ✗ |
+| R3 | Australia | NOR | 35 | 35 | 16 / 42 | 7 ✗ | 7 ✗ |
+| R4 | Japan | VER | 16 ✓ | 31 | 18 / 36 | 2 ✓ | 5 ✗ |
+| R5 | China | VER | 20 | 18 | 15 | 5 ✗ | 3 ✗ |
+
+**Run 3 strategy accuracy: 0% (0/5) — worse than Run 2's 20% (1/5).**
+
+The one correct prediction (R4 Japan) regressed from error 2 → error 5. The hypothesis was not validated: preserving slow end-of-stint laps did not fix the late-prediction bias; it made it worse for most races.
+
+#### Post-Experiment Analysis
+- **Why did strategy accuracy drop?** The filtering change affects both training data and the strategy evaluation data. With TrackStatus='1' applied in `prepare_race()`, the strategy optimizer sees a different slice of each 2024 race — SC laps are now absent, so the stint context the model seeds from is different. The model was also never trained on slow degraded laps before, so seeing them in inference created distribution mismatch.
+- **The raw MAE improvement is real but misleading** — the test set is simply a different (easier, more uniform) distribution. A model trained on this data compares favorably to a moving average on the same data, but that doesn't translate to better strategy timing.
+- **Finding for the report:** This is a useful negative result. Trying to preserve tire degradation signal by changing the data pipeline backfired because: (1) the test distribution also changed, invalidating direct comparison; (2) LSTM models are less robust to the added noise; (3) strategy evaluation quality is the true downstream metric, and it declined.
+- **Recommendation:** Revert or document this as experimental. Run 2 results (20% strategy accuracy, GRU MAE=0.0589) remain the best production-level results.
+
+---
+
 ### Report Narrative Arc (Suggested Structure)
 
 | Step | Experiment | Result | Key Takeaway for Report |
@@ -262,6 +317,9 @@ The `lstm_deep` result is the most informative: doubling the data turned a negat
 | 6 | LSTM + attention | -22.5% | Architectural innovation — failed at short sequence lengths |
 | 7 | GRU baseline | +39.9% / +38.5% | Simpler gating outperforms all LSTM variants |
 | 8 | More training data | Mixed | Helped deeper models; GRU already strong |
+| 9 | Safety car lap filtering (Run 3) | GRU MAE +40%, strategy 0% | Negative result: changing data pipeline hurt strategy accuracy despite lower MAE |
+| 10 | Eval expansion + per-circuit pit loss | 9.5% on 42 evaluations | Revealed original 20% was a lucky 5-race sample; mean error 8.0 laps |
+| 11 | Delta prediction (planned) | TBD | Target ΔLapTime instead of absolute; hypothesis: fixes late-bias by modeling slope directly |
 
 ---
 
@@ -394,7 +452,9 @@ R5 VER: TyreLife values: [1.0 → 33.0]
 
 ---
 
-### Test Race Results (2024 Rounds 1–5) — GRU Baseline Model
+### Eval Run 1 — Initial 5-race eval (GRU Baseline, 2024 Rounds 1–5)
+
+> **Superseded by Eval Run 2.** This 5-race sample was statistically thin and happened to include R4 Japan — one of the model's strongest performances. The expanded 42-race eval (below) gives the authoritative accuracy figure.
 
 Model loaded: `results/best_gru_baseline.pt` (trained on 2022+2023, MAE=0.0589)
 
@@ -496,9 +556,59 @@ The model consistently recommends pit windows **3–7 laps later than actual.** 
 3. **Out-lap filtering effect:** `pick_quicklaps()` removes out-laps. The model never saw genuine "first lap on fresh tyres" data, so `predict_fresh` may underestimate how fast a car is on the very first lap of a new stint — making fresh tyres look slightly worse than they are.
 4. **Per-race normalization inference issue:** During strategy evaluation, the scaler is fitted on all of the driver's laps for that race. In a real-time system, laps later in the race haven't happened yet — this is a mild lookahead that may slightly distort predictions.
 
-#### Success Criteria Summary
+#### Success Criteria Summary (Eval Run 1 — 5 races)
 - ✅ **Primary PASSED** — GRU achieves ~39% MAE improvement over moving average baseline
 - ❌ **Secondary FAILED** — 20% strategy accuracy (1/5 races within ±2 laps)
+
+---
+
+### Eval Run 2 — Expanded 42-race eval + per-circuit pit loss (2024, all rounds)
+
+**Changes from Eval Run 1:**
+1. **Per-circuit pit loss** — replaced the fixed `PIT_LOSS_SECONDS = 22.0` with a per-round dict (`PIT_LOSS_BY_ROUND_2024`) using published F1 strategy estimates. Key differences: Saudi Arabia 19s (short pit lane), Monaco 24s, Canada 17s, Imola 26s, Las Vegas 16s, Singapore 28s.
+2. **Expanded from 5 → 42 evaluations** — all 24 rounds of 2024, VER and NOR as evaluation drivers. Rounds where a driver had no clean laps (e.g., Brazil R21 — wet race, TrackStatus filtering removed all laps) were skipped automatically.
+3. **Plotting disabled by default** — `evaluate_strategy_across_races(..., plot=False)` to avoid 48 plot windows.
+
+**Results: 9.5% accuracy (4/42 race-driver combinations within ±2 laps)**
+
+| Round | Circuit | Driver | Predicted | Actual | Error | ✓ |
+|-------|---------|--------|-----------|--------|-------|---|
+| R1 | Bahrain | NOR | 13 | 15 | 2 | ✓ |
+| R6 | Miami | NOR | 32 | 33 | 1 | ✓ |
+| R8 | Monaco | VER | 55 | 54 | 1 | ✓ |
+| R22 | Las Vegas | VER | 13 | 13 | **0** | ✓ |
+
+**Stats across 42 evaluations:**
+- Mean error: 8.0 laps
+- Median error: 5.5 laps
+- VER: 2/21 ✓ (9.5%), NOR: 2/21 ✓ (9.5%)
+
+**Notable failures:**
+| Round | Circuit | Driver | Error | Notes |
+|-------|---------|--------|-------|-------|
+| R2 | Saudi Arabia | VER | 19 | Model predicts very late (lap 29, actual lap 10) |
+| R15 | Netherlands | VER | 23 | Zandvoort's tight layout; unusual degradation |
+| R20 | Mexico | VER | 23 | Model predicts lap 51, actual lap 28 |
+| R12 | Britain | Both | 15 | Silverstone high-speed wear not captured |
+| R7 | Imola | NOR | 23 | Sprint weekend — race data distorted |
+
+**Crashes (no clean laps found):**
+- R3 VER (Australia) — VER retired, insufficient green-flag laps
+- R9 VER (Canada) — similar issue
+- R21 VER + NOR (Brazil) — wet race, TrackStatus='1' filtered all laps
+
+**Key findings:**
+1. **The original 20% (1/5) was optimistic** — based on a lucky sample. The true accuracy on 42 evaluations is 9.5%, a substantially more reliable estimate.
+2. **Per-circuit pit loss helped on unusual circuits** — Monaco, Las Vegas, and Miami are all within ±2 laps. These are precisely the circuits where the 22s default would have been most wrong. But it couldn't compensate for the fundamental late-bias on standard circuits.
+3. **Mean error jumped to 8.0 laps** — far worse than the 3–7 lap range observed in Eval Run 1. The expanded set exposed many more circuits where the model is catastrophically late.
+4. **The late-bias is the dominant failure mode** — model consistently recommends staying out too long before pitting. Suggests `predict_worn` underestimates degradation slope, causing the delta crossover to arrive too late.
+5. **Brazil R21 limitation** — TrackStatus='1' filtering removes all laps from wet/heavy-SC races. A known limitation of the filtering approach.
+
+#### Updated Success Criteria (Eval Run 2 — 42 races)
+- ✅ **Primary PASSED** — GRU achieves ~40% MAE improvement over moving average baseline
+- ❌ **Secondary FAILED** — 9.5% strategy accuracy (4/42 race-driver combos within ±2 laps)
+
+**Next experiment: delta prediction** — change the training target from absolute lap time to the change in lap time (`ΔLapTime = LapTime[t+1] − LapTime[t]`). Hypothesis: forces the model to explicitly learn degradation slope, which should reduce the late-prediction bias that drives the 8-lap mean error.
 
 ---
 
@@ -527,15 +637,16 @@ Frozen snapshot of the best GRU trained on **2023 data only**. Saved before the 
 
 ## Future Work / Improvements Not Yet Tried
 
-| Idea | Expected Impact | Rationale |
-|------|----------------|-----------|
-| GRU with high dropout (0.4) | Medium | lstm_high_dropout showed +31.5%; GRU + dropout likely pushes higher |
-| Longer sequence length (15–20 laps) | Medium–High | More degradation history; also makes attention viable |
-| Safety car lap filtering | Medium | FastF1 provides TrackStatus data — filter SC/VSC laps from training & eval |
-| Compound-specific degradation models | High | SOFT/MEDIUM/HARD have very different wear profiles; shared model averages them |
-| Multi-stop strategy simulation | High | Current optimizer assumes one future pit; real races often have two stops |
-| More training data (2021 and earlier) | Medium | lstm_deep proved more data helps; GRU likely improves too |
-| GRU with attention at longer seq length | Unknown | Attention failed at seq_len=10; try at 20–30 after increasing sequence length |
-| AdamW optimizer + weight decay | Low–Medium | Better regularization than dropout alone; may help lstm_baseline stability |
-| Competitor position as feature | High | Would allow model to account for undercut/overcut strategy |
-| Track-specific models | Medium | Each circuit has different degradation characteristics; per-circuit tuning |
+| Idea | Status | Expected Impact | Rationale |
+|------|--------|----------------|-----------|
+| **Delta prediction (ΔLapTime target)** | **→ IN PROGRESS** | **High** | **Forces model to explicitly learn degradation slope. Addresses the 8-lap mean error late-bias. Changes target from absolute lap time to lap-to-lap change.** |
+| ~~Safety car lap filtering~~ | DONE — negative | ~~Medium~~ | Tried in Run 3. Strategy accuracy dropped 20% → 0% on 5-race sample. Expanded 42-race eval confirmed 9.5% true accuracy. |
+| ~~Per-circuit pit loss~~ | DONE — partial | Medium | Added `PIT_LOSS_BY_ROUND_2024` dict. Helped unusual-layout circuits (Monaco, Las Vegas, Miami all ✓). Didn't fix fundamental late-bias. |
+| GRU with high dropout (0.4) | Pending | Medium | lstm_high_dropout showed +31.5%; never tried on GRU which is already the strongest architecture |
+| Longer sequence length (15–20 laps) | Pending | Medium–High | More degradation context before prediction; also makes attention viable (failed at 10 steps) |
+| Compound-specific degradation models | Pending | High | SOFT/MEDIUM/HARD have very different wear profiles; shared model averages across them, diluting degradation signal |
+| Multi-stop strategy simulation | Pending | High | Current optimizer assumes one future pit; many races are 2-stop, optimizer currently ignores second stop |
+| More training data (2021 and earlier) | Pending | Medium | lstm_deep proved more data helps; GRU likely improves too |
+| AdamW optimizer + weight decay | Pending | Low–Medium | Better regularization than dropout alone; may stabilize LSTM variants |
+| Competitor position as feature | Pending | High | Would allow model to account for undercut/overcut strategy — real teams pit early for track position |
+| Track-specific models | Pending | Medium | Each circuit has different degradation characteristics; per-circuit tuning |

@@ -24,11 +24,12 @@ CONFIG = {
 }
 
 
-def load_data(device: torch.device) -> tuple:
-    X_train = torch.load(DATA_PROC / 'X_train.pt').to(device)
-    y_train = torch.load(DATA_PROC / 'y_train.pt').to(device)
-    X_test  = torch.load(DATA_PROC / 'X_test.pt').to(device)
-    y_test  = torch.load(DATA_PROC / 'y_test.pt').to(device)
+def load_data(device: torch.device, delta: bool = False) -> tuple:
+    suffix = '_delta' if delta else ''
+    X_train = torch.load(DATA_PROC / f'X_train{suffix}.pt').to(device)
+    y_train = torch.load(DATA_PROC / f'y_train{suffix}.pt').to(device)
+    X_test  = torch.load(DATA_PROC / f'X_test{suffix}.pt').to(device)
+    y_test  = torch.load(DATA_PROC / f'y_test{suffix}.pt').to(device)
     return X_train, y_train, X_test, y_test
 
 
@@ -36,17 +37,18 @@ def train_model(
     model_type: str,
     config: dict,
     device: torch.device,
-    run_name: str = None
+    run_name: str = None,
+    delta: bool = False
 ) -> dict:
 
     name = run_name or model_type
 
     print(f"\n{'='*50}")
-    print(f"Training {name.upper()}")
+    print(f"Training {name.upper()} ({'delta' if delta else 'absolute'} target)")
     print(f"{'='*50}")
 
     # Load data
-    X_train_full, y_train_full, X_test, y_test = load_data(device)
+    X_train_full, y_train_full, X_test, y_test = load_data(device, delta=delta)
 
     # Train/val split
     dataset    = TensorDataset(X_train_full, y_train_full)
@@ -152,17 +154,32 @@ def train_model(
     return results
 
 
-def moving_average_baseline(device: torch.device) -> float:
+def moving_average_baseline(device: torch.device, delta: bool = False) -> float:
     """
-    Naive baseline: predict next lap time as the mean of the
-    last SEQUENCE_LENGTH lap times in the input window.
-    """
-    _, _, X_test, y_test = load_data(device)
+    Naive baseline for absolute mode: predict next lap time = mean of last
+    SEQUENCE_LENGTH lap times in the input window.
 
-    # LapTimeSeconds is the first feature (index 0)
-    preds = X_test[:, :, 0].mean(dim=1)
-    mae   = torch.mean(torch.abs(preds - y_test)).item()
-    print(f"\nMoving Average Baseline MAE: {mae:.6f}")
+    For delta mode: predict the mean of the lap-to-lap deltas observed in
+    the input window (recent trend extrapolation). This is equivalent to
+    predicting that degradation continues at the same rate as the window average.
+    Predicting zero (no change) would be the simplest delta baseline, but mean
+    delta is a fairer comparison since it uses the same input information.
+    """
+    _, _, X_test, y_test = load_data(device, delta=delta)
+
+    # LapTimeSeconds is feature index 0 in all modes
+    if delta:
+        # Mean delta across the 9 consecutive pairs in the 10-lap window
+        window_laps = X_test[:, :, 0]  # (n, 10)
+        window_deltas = window_laps[:, 1:] - window_laps[:, :-1]  # (n, 9)
+        preds = window_deltas.mean(dim=1)
+        label = "Mean-Delta Baseline"
+    else:
+        preds = X_test[:, :, 0].mean(dim=1)
+        label = "Moving Average Baseline"
+
+    mae = torch.mean(torch.abs(preds - y_test)).item()
+    print(f"\n{label} MAE: {mae:.6f}")
     return mae
 
 
@@ -193,32 +210,59 @@ def moving_average_baseline(device: torch.device) -> float:
 #     CONFIG_LSTM_HIGH_DROPOUT = {**CONFIG, 'num_layers': 2, 'dropout': 0.4}
 #     CONFIG_LSTM_SMALL = {**CONFIG, 'num_layers': 2, 'hidden_size': 32}
 
-if __name__ == '__main__':
+# if __name__ == '__main__':  # Run 1–3 (absolute target)
+#     device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
+#     print(f"Using device: {device}")
+#     baseline_mae = moving_average_baseline(device)
+#     EXPERIMENTS = {
+#         'lstm_baseline':     ('lstm',           {**CONFIG, 'hidden_size': 64,  'num_layers': 2, 'dropout': 0.2}),
+#         'lstm_large':        ('lstm',           {**CONFIG, 'hidden_size': 128, 'num_layers': 2, 'dropout': 0.2}),
+#         'lstm_deep':         ('lstm',           {**CONFIG, 'hidden_size': 64,  'num_layers': 3, 'dropout': 0.3}),
+#         'lstm_high_dropout': ('lstm',           {**CONFIG, 'hidden_size': 64,  'num_layers': 2, 'dropout': 0.4}),
+#         'lstm_attention':    ('lstm_attention', {**CONFIG, 'hidden_size': 64,  'num_layers': 2, 'dropout': 0.2}),
+#         'gru_baseline':      ('gru',            {**CONFIG, 'hidden_size': 64,  'num_layers': 2, 'dropout': 0.2}),
+#     }
+#     all_results = {}
+#     for run_name, (model_type, cfg) in EXPERIMENTS.items():
+#         all_results[run_name] = train_model(model_type, cfg, device, run_name=run_name)
+#     print(f"\n{'='*50}")
+#     print(f"SUMMARY")
+#     print(f"{'='*50}")
+#     print(f"{'Run':<22} {'MAE':>10} {'Improvement':>14}")
+#     print(f"{'-'*48}")
+#     print(f"{'Baseline (moving avg)':<22} {baseline_mae:>10.6f} {'—':>14}")
+#     for run_name, results in all_results.items():
+#         mae = results['test_mae']
+#         improvement = (baseline_mae - mae) / baseline_mae * 100
+#         print(f"{run_name:<22} {mae:>10.6f} {improvement:>+13.1f}%")
+
+if __name__ == '__main__':  # Run 4 — delta target
     device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
     print(f"Using device: {device}")
 
-    baseline_mae = moving_average_baseline(device)
+    baseline_mae = moving_average_baseline(device, delta=True)
 
+    # Same architectures as previous runs; run_name gets _delta suffix so
+    # checkpoints don't overwrite the absolute-target models.
     EXPERIMENTS = {
-        'lstm_baseline':     ('lstm',           {**CONFIG, 'hidden_size': 64,  'num_layers': 2, 'dropout': 0.2}),
-        'lstm_large':        ('lstm',           {**CONFIG, 'hidden_size': 128, 'num_layers': 2, 'dropout': 0.2}),
-        'lstm_deep':         ('lstm',           {**CONFIG, 'hidden_size': 64,  'num_layers': 3, 'dropout': 0.3}),
-        'lstm_high_dropout': ('lstm',           {**CONFIG, 'hidden_size': 64,  'num_layers': 2, 'dropout': 0.4}),
-        'lstm_attention':    ('lstm_attention', {**CONFIG, 'hidden_size': 64,  'num_layers': 2, 'dropout': 0.2}),
-        'gru_baseline':      ('gru',            {**CONFIG, 'hidden_size': 64,  'num_layers': 2, 'dropout': 0.2}),
+        'lstm_baseline_delta':     ('lstm',           {**CONFIG, 'hidden_size': 64,  'num_layers': 2, 'dropout': 0.2}),
+        'lstm_high_dropout_delta': ('lstm',           {**CONFIG, 'hidden_size': 64,  'num_layers': 2, 'dropout': 0.4}),
+        'gru_baseline_delta':      ('gru',            {**CONFIG, 'hidden_size': 64,  'num_layers': 2, 'dropout': 0.2}),
     }
 
     all_results = {}
     for run_name, (model_type, cfg) in EXPERIMENTS.items():
-        all_results[run_name] = train_model(model_type, cfg, device, run_name=run_name)
+        all_results[run_name] = train_model(
+            model_type, cfg, device, run_name=run_name, delta=True
+        )
 
     print(f"\n{'='*50}")
-    print(f"SUMMARY")
+    print(f"SUMMARY — Run 4 (delta target)")
     print(f"{'='*50}")
-    print(f"{'Run':<22} {'MAE':>10} {'Improvement':>14}")
-    print(f"{'-'*48}")
-    print(f"{'Baseline (moving avg)':<22} {baseline_mae:>10.6f} {'—':>14}")
+    print(f"{'Run':<28} {'MAE':>10} {'Improvement':>14}")
+    print(f"{'-'*54}")
+    print(f"{'Baseline (mean delta)':<28} {baseline_mae:>10.6f} {'—':>14}")
     for run_name, results in all_results.items():
         mae = results['test_mae']
         improvement = (baseline_mae - mae) / baseline_mae * 100
-        print(f"{run_name:<22} {mae:>10.6f} {improvement:>+13.1f}%")
+        print(f"{run_name:<28} {mae:>10.6f} {improvement:>+13.1f}%")

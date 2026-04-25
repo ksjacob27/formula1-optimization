@@ -11,7 +11,42 @@ from models.lstm import get_model
 RESULTS_DIR = Path('results')
 DATA_RAW    = Path('data/raw')
 
+# Default pit loss (used when a circuit-specific value is not supplied).
 PIT_LOSS_SECONDS       = 22.0
+
+# Per-circuit pit loss (seconds): time penalty for diverting through the pit
+# lane vs continuing at racing speed. Values are published F1 strategy estimates
+# and reflect the 2024 calendar layout. Within-circuit variation across years
+# is small (±1s) unless the pit lane is rebuilt.
+# Source: F1 broadcast strategy graphics, Mercedes/Ferrari strategy briefings,
+# and pit-lane length / pit-speed-limit calculations.
+PIT_LOSS_BY_ROUND_2024 = {
+    1:  22.0,  # Bahrain
+    2:  19.0,  # Saudi Arabia (Jeddah, short pit lane)
+    3:  21.0,  # Australia (Melbourne)
+    4:  22.0,  # Japan (Suzuka)
+    5:  22.0,  # China (Shanghai)
+    6:  20.0,  # Miami
+    7:  26.0,  # Imola (slow pit lane geometry)
+    8:  24.0,  # Monaco
+    9:  17.0,  # Canada (Montreal, fast pit lane)
+    10: 22.0,  # Spain (Barcelona)
+    11: 21.0,  # Austria (Red Bull Ring)
+    12: 22.0,  # Britain (Silverstone)
+    13: 20.0,  # Hungary
+    14: 20.0,  # Belgium (Spa)
+    15: 22.0,  # Netherlands (Zandvoort)
+    16: 21.0,  # Italy (Monza)
+    17: 18.0,  # Azerbaijan (Baku, fast pit lane)
+    18: 28.0,  # Singapore (slow pit lane geometry)
+    19: 22.0,  # USA (COTA)
+    20: 22.0,  # Mexico
+    21: 21.0,  # Brazil (São Paulo)
+    22: 16.0,  # Las Vegas (very fast pit lane)
+    23: 22.0,  # Qatar
+    24: 22.0,  # Abu Dhabi
+}
+
 SEQUENCE_LENGTH        = 10
 MAX_PREDICTION_HORIZON = 20
 FEATURE_COLS           = [
@@ -23,10 +58,11 @@ FUEL_LOAD_KG   = 110.0
 FUEL_BURN_RATE = 1.6
 
 
-def load_model(model_type: str, device: torch.device) -> nn.Module:
+def load_model(model_type: str, device: torch.device, run_name: str = None) -> nn.Module:
+    name  = run_name or model_type
     model = get_model(model_type).to(device)
     model.load_state_dict(torch.load(
-        RESULTS_DIR / f'best_{model_type}.pt',
+        RESULTS_DIR / f'best_{name}.pt',
         map_location=device
     ))
     model.eval()
@@ -90,9 +126,15 @@ def predict_worn(
     start_lap: int,
     n_future: int,
     compound: str,
-    device: torch.device
+    device: torch.device,
+    delta: bool = False
 ) -> np.ndarray:
-    """Predict lap times continuing on WORN tyres from current history."""
+    """Predict lap times continuing on WORN tyres from current history.
+
+    If delta=True the model outputs ΔLapTime; predictions are integrated
+    back to absolute normalized lap times by accumulating from the last
+    observed value.
+    """
     values   = laps_norm[FEATURE_COLS].values.copy()
     seed_idx = max(0, start_lap - SEQUENCE_LENGTH)
     sequence = values[seed_idx:start_lap].tolist()
@@ -107,6 +149,7 @@ def predict_worn(
         1 if compound == 'HARD'   else 0,
     ]
     current_tyre_life = sequence[-1][1]
+    last_abs_lap_time = sequence[-1][0]  # needed for delta integration
     predictions       = []
 
     for i in range(n_future):
@@ -115,13 +158,19 @@ def predict_worn(
         ).to(device)
 
         with torch.no_grad():
-            pred = model(seq_tensor).item()
+            out = model(seq_tensor).item()
 
-        predictions.append(pred)
+        if delta:
+            abs_lap_time  = last_abs_lap_time + out
+            last_abs_lap_time = abs_lap_time
+        else:
+            abs_lap_time = out
+
+        predictions.append(abs_lap_time)
 
         last_row      = list(sequence[-1])
         next_row      = last_row.copy()
-        next_row[0]   = pred
+        next_row[0]   = abs_lap_time
         next_row[1]   = current_tyre_life + (i + 1)
         next_row[2]   = max(0, last_row[2] - FUEL_BURN_RATE / 110.0)
         next_row[5:8] = compound_vec
@@ -136,9 +185,14 @@ def predict_fresh(
     start_lap: int,
     n_future: int,
     compound: str,
-    device: torch.device
+    device: torch.device,
+    delta: bool = False
 ) -> np.ndarray:
-    """Predict lap times on FRESH tyres by seeding with low stint-length laps."""
+    """Predict lap times on FRESH tyres by seeding with low stint-length laps.
+
+    If delta=True the model outputs ΔLapTime; predictions are integrated
+    back to absolute normalized lap times from the seed's last lap time.
+    """
     compound_col = f'Compound_{compound}'
 
     if compound_col in laps_norm.columns:
@@ -173,8 +227,9 @@ def predict_fresh(
         1 if compound == 'HARD'   else 0,
     ]
 
-    sequence    = [list(r) for r in seed]
-    predictions = []
+    sequence          = [list(r) for r in seed]
+    last_abs_lap_time = sequence[-1][0]  # needed for delta integration
+    predictions       = []
 
     for i in range(n_future):
         seq_tensor = torch.tensor(
@@ -182,13 +237,19 @@ def predict_fresh(
         ).to(device)
 
         with torch.no_grad():
-            pred = model(seq_tensor).item()
+            out = model(seq_tensor).item()
 
-        predictions.append(pred)
+        if delta:
+            abs_lap_time      = last_abs_lap_time + out
+            last_abs_lap_time = abs_lap_time
+        else:
+            abs_lap_time = out
+
+        predictions.append(abs_lap_time)
 
         last_row      = list(sequence[-1])
         next_row      = last_row.copy()
-        next_row[0]   = pred
+        next_row[0]   = abs_lap_time
         next_row[1]   = (i + 1) / 40.0
         next_row[2]   = max(0, last_row[2] - FUEL_BURN_RATE / 110.0)
         next_row[5:8] = compound_vec
@@ -204,7 +265,9 @@ def find_optimal_pit_window(
     scalers: dict,
     device: torch.device,
     total_laps: int = 57,
-    fresh_compound: str = 'MEDIUM'
+    fresh_compound: str = 'MEDIUM',
+    pit_loss_seconds: float = PIT_LOSS_SECONDS,
+    delta: bool = False
 ) -> dict:
     pit_lap_range   = range(SEQUENCE_LENGTH + 1, total_laps - SEQUENCE_LENGTH)
     results         = []
@@ -213,10 +276,11 @@ def find_optimal_pit_window(
     lap_time_max    = lap_time_scaler.data_max_[0]
     lap_time_min    = lap_time_scaler.data_min_[0]
     lap_time_range  = lap_time_max - lap_time_min
-    pit_loss_norm   = PIT_LOSS_SECONDS / lap_time_max
+    pit_loss_norm   = pit_loss_seconds / lap_time_max
 
     print(f"Lap time range (s): {lap_time_range:.2f}")
     print(f"Lap time max (s):   {lap_time_max:.2f}")
+    print(f"Pit loss (s):        {pit_loss_seconds:.1f}")
     print(f"Pit loss normalized: {pit_loss_norm:.4f}")
     print(f"Avg normalized lap time: {laps_norm['LapTimeSeconds'].mean():.4f}")
 
@@ -227,12 +291,14 @@ def find_optimal_pit_window(
         stay_preds = predict_worn(
             model, laps_norm, pit_lap, remaining,
             compound=laps_raw['Compound'].iloc[compound_idx],
-            device=device
+            device=device,
+            delta=delta
         )
         pit_preds = predict_fresh(
             model, laps_norm, pit_lap, remaining,
             compound=fresh_compound,
-            device=device
+            device=device,
+            delta=delta
         )
 
         pit_total  = pit_loss_norm + pit_preds.sum()
@@ -402,7 +468,9 @@ def plot_strategy(
 def evaluate_strategy_across_races(
     model: nn.Module,
     device: torch.device,
-    races: list[dict]
+    races: list[dict],
+    plot: bool = False,
+    delta: bool = False
 ) -> pd.DataFrame:
     results = []
 
@@ -412,9 +480,10 @@ def evaluate_strategy_across_races(
         driver         = race['driver']
         total_laps     = race['total_laps']
         fresh_compound = race['fresh_compound']
+        pit_loss       = race.get('pit_loss', PIT_LOSS_SECONDS)
 
         print(f"\n{'='*50}")
-        print(f"Processing {year} Round {round_num} — {driver}")
+        print(f"Processing {year} Round {round_num} — {driver} (pit loss {pit_loss}s)")
         print(f"{'='*50}")
 
         try:
@@ -428,7 +497,9 @@ def evaluate_strategy_across_races(
             result       = find_optimal_pit_window(
                 model, laps_norm, laps_raw, scalers, device,
                 total_laps=total_laps,
-                fresh_compound=fresh_compound
+                fresh_compound=fresh_compound,
+                pit_loss_seconds=pit_loss,
+                delta=delta
             )
             best_pit_lap = result['best_pit_lap']
             results_df   = result['results']
@@ -457,16 +528,18 @@ def evaluate_strategy_across_races(
             print(f"  Actual pit lap(s): {actual_pit_laps}")
             print(f"  Error: {error} laps | Within ±2: {'✓' if within_2 else '✗'}")
 
-            plot_strategy(
-                laps_raw, laps_norm, scalers, model, device,
-                best_pit_lap, results_df, pit_windows,
-                driver, year, round_num
-            )
+            if plot:
+                plot_strategy(
+                    laps_raw, laps_norm, scalers, model, device,
+                    best_pit_lap, results_df, pit_windows,
+                    driver, year, round_num
+                )
 
             results.append({
                 'year':           year,
                 'round':          round_num,
                 'driver':         driver,
+                'pit_loss':       pit_loss,
                 'predicted_pit':  best_pit_lap,
                 'actual_pits':    list(actual_pit_laps),
                 'closest_actual': closest_actual,
@@ -485,17 +558,62 @@ if __name__ == '__main__':
     device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
     print(f"Using device: {device}")
 
-    model = load_model('gru', device)
+    # Run 4 GRU trained on delta target — use the delta checkpoint.
+    # Set delta=True throughout so predictions are integrated correctly.
+    USE_DELTA = True
+    model = load_model('gru', device, run_name='gru_baseline_delta')
 
-    TEST_RACES = [
-        {'year': 2024, 'round': 1, 'driver': 'VER', 'total_laps': 57, 'fresh_compound': 'HARD'},
-        {'year': 2024, 'round': 2, 'driver': 'VER', 'total_laps': 50, 'fresh_compound': 'HARD'},  # swap LEC -> VER
-        {'year': 2024, 'round': 3, 'driver': 'NOR', 'total_laps': 58, 'fresh_compound': 'HARD'},
-        {'year': 2024, 'round': 4, 'driver': 'VER', 'total_laps': 53, 'fresh_compound': 'MEDIUM'},
-        {'year': 2024, 'round': 5, 'driver': 'VER', 'total_laps': 56, 'fresh_compound': 'HARD'},  # swap LEC -> VER
+    # 2024 calendar — all 24 rounds. total_laps is the official race distance.
+    # Each entry is evaluated for VER as primary driver; we also add NOR as a
+    # secondary driver for additional sample size. Races where the driver did
+    # not finish (or had an unusual race) are skipped automatically by the
+    # exception handler in evaluate_strategy_across_races.
+    RACE_META_2024 = [
+        # round, total_laps, fresh_compound
+        (1,  57, 'HARD'),    # Bahrain
+        (2,  50, 'HARD'),    # Saudi Arabia
+        (3,  58, 'HARD'),    # Australia
+        (4,  53, 'MEDIUM'),  # Japan
+        (5,  56, 'HARD'),    # China
+        (6,  57, 'HARD'),    # Miami
+        (7,  63, 'HARD'),    # Imola
+        (8,  78, 'HARD'),    # Monaco
+        (9,  70, 'HARD'),    # Canada
+        (10, 66, 'MEDIUM'),  # Spain
+        (11, 71, 'HARD'),    # Austria
+        (12, 52, 'HARD'),    # Britain
+        (13, 70, 'HARD'),    # Hungary
+        (14, 44, 'HARD'),    # Belgium
+        (15, 72, 'HARD'),    # Netherlands
+        (16, 53, 'HARD'),    # Italy
+        (17, 51, 'HARD'),    # Azerbaijan
+        (18, 62, 'HARD'),    # Singapore
+        (19, 56, 'HARD'),    # USA
+        (20, 71, 'HARD'),    # Mexico
+        (21, 69, 'HARD'),    # Brazil
+        (22, 50, 'HARD'),    # Las Vegas
+        (23, 57, 'HARD'),    # Qatar
+        (24, 58, 'HARD'),    # Abu Dhabi
     ]
 
-    summary = evaluate_strategy_across_races(model, device, TEST_RACES)
+    DRIVERS = ['VER', 'NOR']
+
+    TEST_RACES = []
+    for round_num, total_laps, fresh_compound in RACE_META_2024:
+        for driver in DRIVERS:
+            TEST_RACES.append({
+                'year':           2024,
+                'round':          round_num,
+                'driver':         driver,
+                'total_laps':     total_laps,
+                'fresh_compound': fresh_compound,
+                'pit_loss':       PIT_LOSS_BY_ROUND_2024.get(round_num, PIT_LOSS_SECONDS),
+            })
+
+    print(f"Evaluating {len(TEST_RACES)} race-driver combinations "
+          f"({len(RACE_META_2024)} races × {len(DRIVERS)} drivers)")
+
+    summary = evaluate_strategy_across_races(model, device, TEST_RACES, plot=False, delta=USE_DELTA)
 
     print(f"\n{'='*50}")
     print(f"STRATEGY EVALUATION SUMMARY")

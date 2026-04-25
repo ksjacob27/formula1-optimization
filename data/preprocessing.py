@@ -18,11 +18,20 @@ FEATURE_COLS = [
 TARGET_COL = 'LapTimeSeconds'
 
 
-def build_sequences(group: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+def build_sequences(
+    group: pd.DataFrame,
+    delta: bool = False
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Build sliding window sequences from a single driver stint.
     Returns X of shape (n_samples, sequence_length, n_features)
-    and y of shape (n_samples,)
+    and y of shape (n_samples,).
+
+    If delta=True, y is the lap-to-lap change in LapTimeSeconds
+    (LapTime[t+1] - LapTime[t]) rather than the absolute value.
+    X always contains absolute feature values so the model retains
+    full context. Delta values are in the same normalized units as
+    LapTimeSeconds (no additional scaling applied).
     """
     values = group[FEATURE_COLS].values
     target = group[TARGET_COL].values
@@ -30,7 +39,11 @@ def build_sequences(group: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     X, y = [], []
     for i in range(len(values) - SEQUENCE_LENGTH):
         X.append(values[i:i + SEQUENCE_LENGTH])
-        y.append(target[i + SEQUENCE_LENGTH])
+        if delta:
+            # target = how much lap time changes on the next lap
+            y.append(target[i + SEQUENCE_LENGTH] - target[i + SEQUENCE_LENGTH - 1])
+        else:
+            y.append(target[i + SEQUENCE_LENGTH])
 
     return np.array(X), np.array(y)
 
@@ -53,10 +66,17 @@ def normalize_race(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     return df, scalers
 
 
-def process_split(parquet_paths: Path | list[Path], split_name: str) -> None:
+def process_split(
+    parquet_paths: Path | list[Path],
+    split_name: str,
+    delta: bool = False
+) -> None:
     """
     Load one or more season parquets, build sequences per driver per stint,
     normalize per race, and save tensors.
+
+    If delta=True, saves delta-target tensors with a '_delta' suffix so
+    they coexist alongside the absolute-target tensors for comparison.
     """
     if isinstance(parquet_paths, Path):
         parquet_paths = [parquet_paths]
@@ -77,7 +97,7 @@ def process_split(parquet_paths: Path | list[Path], split_name: str) -> None:
             for stint_df in stint_groups:
                 if len(stint_df) <= SEQUENCE_LENGTH:
                     continue  # stint too short to build any sequences
-                X, y = build_sequences(stint_df)
+                X, y = build_sequences(stint_df, delta=delta)
                 all_X.append(X)
                 all_y.append(y)
 
@@ -87,10 +107,12 @@ def process_split(parquet_paths: Path | list[Path], split_name: str) -> None:
     X_tensor = torch.tensor(X_all, dtype=torch.float32)
     y_tensor = torch.tensor(y_all, dtype=torch.float32)
 
-    torch.save(X_tensor, DATA_PROC / f'X_{split_name}.pt')
-    torch.save(y_tensor, DATA_PROC / f'y_{split_name}.pt')
+    suffix = f'_{split_name}_delta' if delta else f'_{split_name}'
+    torch.save(X_tensor, DATA_PROC / f'X{suffix}.pt')
+    torch.save(y_tensor, DATA_PROC / f'y{suffix}.pt')
 
-    print(f"{split_name}: {X_tensor.shape[0]} sequences, "
+    mode_str = 'delta' if delta else 'absolute'
+    print(f"{split_name} ({mode_str}): {X_tensor.shape[0]} sequences, "
           f"input shape {X_tensor.shape}")
 
 
@@ -124,5 +146,10 @@ if __name__ == '__main__':
     # combined 2022 + 2023 for larger training set
     process_split([DATA_RAW / 'season_2022.parquet', DATA_RAW / 'season_2023.parquet'], 'train')
     process_split(DATA_RAW / 'season_2024.parquet', 'test')
+
+    # Delta-target versions (saved with _delta suffix, coexist with absolute)
+    process_split([DATA_RAW / 'season_2022.parquet', DATA_RAW / 'season_2023.parquet'], 'train', delta=True)
+    process_split(DATA_RAW / 'season_2024.parquet', 'test', delta=True)
+
     print("\nPreprocessing complete.")
     print(f"Files saved to {DATA_PROC}")
