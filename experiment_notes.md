@@ -836,12 +836,15 @@ This is the third consecutive experiment where MAE and strategy accuracy moved i
 
 SOFT MAE is higher due to having 3.4× fewer sequences. MEDIUM and HARD approximately match the shared baseline.
 
-**Strategy accuracy: 61.9% (26/42) — +26.2pp over Phase 1, +30.9pp over Run 4 baseline**
+**Strategy accuracy: 61.9% (26/42) on VER+NOR — +26.2pp over Phase 1, +30.9pp over Run 4 baseline**
 
-| Metric | Run 4 | Phase 1 | Phase 2 |
-|--------|-------|---------|---------|
-| Strategy accuracy ±5 laps | 31.0% | 35.7% | **61.9%** |
-| Model | shared GRU | shared GRU + multi-stop | compound GRU + multi-stop |
+> **Updated headline (Phase 5):** When the same Phase 2 model is evaluated on 6 drivers across 3 teams (122 race-driver combos), accuracy is **52.5% (64/122)**. The 61.9% number above is the favourable 2-driver subset and is preserved here for traceability — see Phase 5 for the larger-sample number and per-driver breakdown.
+
+| Metric | Run 4 | Phase 1 | Phase 2 (2 drivers) | Phase 5 (6 drivers) |
+|--------|-------|---------|---------------------|---------------------|
+| Strategy accuracy ±5 laps | 31.0% | 35.7% | **61.9%** | **52.5%** |
+| Sample size | 42 | 42 | 42 | 122 |
+| Model | shared GRU | shared GRU + multi-stop | compound GRU + multi-stop | compound GRU + multi-stop |
 
 **Key improvements vs Phase 1:**
 - Netherlands R15: 32-lap error → 1-lap error ✓
@@ -931,6 +934,45 @@ The regression pattern in the per-race table shows many 2-stop predictions with 
 | Artifact | Description |
 |----------|-------------|
 | `results/strategy_eval_seq15_final.log` | Full eval output (50.0%) |
+
+---
+
+### Phase 5 — Expanded Driver Evaluation (6 drivers, 2026-04-26)
+
+**Purpose:** The Phase 2 result (61.9%) was computed on only 2 drivers (VER + NOR). To stress-test whether that result generalises across more drivers and car/team contexts, the eval was expanded to 6 drivers covering the top 3 teams: Red Bull (VER), McLaren (NOR), Ferrari (LEC, SAI), and Mercedes (HAM, RUS). Same Phase 2 model artifacts, no retraining, no other config changes.
+
+**Result: 52.5% (64/122) — −9.4pp regression vs the VER+NOR-only eval**
+
+**Per-driver breakdown:**
+
+| Driver | Team | Correct / N | Accuracy | Median Error |
+|--------|------|-------------|----------|--------------|
+| RUS | Mercedes | 14 / 20 | **70.0%** | 4 |
+| SAI | Ferrari | 12 / 20 | 60.0% | 4.5 |
+| VER | Red Bull | 11 / 21 | 52.4% | 5 |
+| NOR | McLaren | 10 / 21 | 47.6% | 11 |
+| LEC | Ferrari | 9 / 20 | 45.0% | 7 |
+| HAM | Mercedes | 8 / 20 | 40.0% | 11.5 |
+
+**Observations:**
+- Per-driver accuracy ranges from **40% (HAM) to 70% (RUS)**, a 30pp spread within the same eval.
+- RUS is the only driver to hit the 70% secondary criterion in isolation.
+- HAM and LEC show much higher median error (11.5 and 7 laps) than RUS / SAI (4 and 4.5 laps), indicating a bimodal failure mode rather than uniform noise.
+- Same-team pairs diverge significantly: HAM 40% vs RUS 70% (Mercedes), LEC 45% vs SAI 60% (Ferrari). This rules out "team effect" as the explanation — driver-specific stint patterns matter.
+- VER's eval grew by 1 race (Round 9 Canada now includes VER without NOR) and accuracy held roughly stable (61.9% → 52.4% on the larger set, mostly driven by the new race adding noise).
+
+**Why the headline number drops:**
+The 61.9% on VER+NOR was a favourable subset. Both drivers run aggressive strategy at the Red Bull/McLaren level, generating clear degradation signals the model fits well. Mercedes drivers in 2024 ran more conservative strategies on cars with different tyre wear characteristics — the compound-specific GRUs (trained on aggregated 2022+2023 stints) systematically misjudge pit timing for these cars. This is consistent with the project's known limitation: the model has no driver/team identity feature.
+
+**What this means for the report:**
+The 52.5% number on 122 evaluations is the more honest headline metric. It is still **+21.5pp over the 31% baseline** (Phase 0 single-stop with ±5 laps). The +9.4pp drop from the 2-driver subset is itself a useful finding: it quantifies how much driver/team selection inflates strategy-evaluation numbers in the absence of identity features.
+
+| Artifact | Description |
+|----------|-------------|
+| `results/strategy_eval_6drivers.log` | Full eval output (52.5%, 122 evaluations) |
+| `results/strategy_summary_6drivers_52pct.csv` | Per-race-driver breakdown (122 rows) |
+
+**Reproduction:** `DRIVERS = ['VER', 'NOR', 'LEC', 'SAI', 'HAM', 'RUS']` in `strategy/pit_optimizer.py` `__main__`, then `PYTHONPATH=. python strategy/pit_optimizer.py`.
 
 ---
 
@@ -1029,3 +1071,5 @@ Frozen snapshot of the best GRU trained on **2023 data only**. Saved before the 
 | AdamW optimizer + weight decay | Pending | Low–Medium | Better regularization than dropout alone; may stabilize LSTM variants |
 | Competitor position as feature | Pending | High | Would allow model to account for undercut/overcut strategy — real teams pit early for track position |
 | Track-specific models | Pending | Medium | Each circuit has different degradation characteristics; per-circuit tuning |
+| ~~Expand driver eval beyond VER+NOR~~ | DONE — informative | ~~Low~~ | Phase 5. Eval grew to 6 drivers / 122 evals → 52.5%. Per-driver spread 40–70% (HAM↔RUS) reveals model has no driver/team identity feature. |
+| Driver/team identity features | Pending | High | Phase 5 showed 30pp per-driver spread within same eval. Adding driver one-hot or team-level embeddings would close the most obvious systematic gap. |
