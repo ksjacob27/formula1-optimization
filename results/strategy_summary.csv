@@ -1,43 +1,43 @@
-year,round,driver,pit_loss,predicted_pit,actual_pits,closest_actual,error_laps,within_2_laps
-2024,1,VER,22.0,14,"[np.int64(19), np.int64(39)]",19,5,False
-2024,1,NOR,22.0,13,"[np.int64(15), np.int64(35)]",15,2,True
-2024,2,VER,19.0,29,[np.int64(10)],10,19,False
-2024,2,NOR,19.0,32,[np.int64(39)],39,7,False
-2024,3,NOR,21.0,13,"[np.int64(16), np.int64(42)]",16,3,False
-2024,4,VER,22.0,33,"[np.int64(18), np.int64(36)]",36,3,False
-2024,4,NOR,22.0,34,"[np.int64(13), np.int64(28)]",28,6,False
-2024,5,VER,22.0,25,[np.int64(15)],15,10,False
-2024,5,NOR,22.0,20,[np.int64(32)],32,12,False
-2024,6,VER,20.0,31,[np.int64(25)],25,6,False
-2024,6,NOR,20.0,32,[np.int64(33)],33,1,True
-2024,7,VER,26.0,23,[np.int64(26)],26,3,False
-2024,7,NOR,26.0,47,[np.int64(24)],24,23,False
-2024,8,VER,24.0,55,[np.int64(54)],54,1,True
-2024,10,VER,22.0,41,"[np.int64(19), np.int64(46)]",46,5,False
-2024,10,NOR,22.0,44,"[np.int64(25), np.int64(49)]",49,5,False
-2024,11,VER,21.0,22,"[np.int64(25), np.int64(53), np.int64(67)]",25,3,False
-2024,11,NOR,21.0,19,"[np.int64(25), np.int64(53)]",25,6,False
-2024,12,VER,22.0,25,[np.int64(40)],40,15,False
-2024,12,NOR,22.0,26,[np.int64(41)],41,15,False
-2024,13,VER,20.0,46,"[np.int64(23), np.int64(51)]",51,5,False
-2024,13,NOR,20.0,43,"[np.int64(19), np.int64(47)]",47,4,False
-2024,14,VER,20.0,24,"[np.int64(12), np.int64(30)]",30,6,False
-2024,14,NOR,20.0,26,"[np.int64(17), np.int64(31)]",31,5,False
-2024,15,VER,22.0,52,[np.int64(29)],29,23,False
-2024,15,NOR,22.0,13,[np.int64(30)],30,17,False
-2024,16,VER,21.0,38,"[np.int64(24), np.int64(43)]",43,5,False
-2024,16,NOR,21.0,29,"[np.int64(16), np.int64(34)]",34,5,False
-2024,17,VER,18.0,33,[np.int64(14)],14,19,False
-2024,17,NOR,18.0,35,[np.int64(39)],39,4,False
-2024,18,VER,28.0,42,[np.int64(31)],31,11,False
-2024,18,NOR,28.0,45,[np.int64(32)],32,13,False
-2024,19,VER,22.0,37,[np.int64(27)],27,10,False
-2024,19,NOR,22.0,36,[np.int64(33)],33,3,False
-2024,20,VER,22.0,51,[np.int64(28)],28,23,False
-2024,20,NOR,22.0,43,[np.int64(32)],32,11,False
-2024,22,VER,16.0,13,"[np.int64(13), np.int64(29)]",13,0,True
-2024,22,NOR,16.0,35,"[np.int64(11), np.int64(32)]",32,3,False
-2024,23,VER,22.0,37,[np.int64(43)],43,6,False
-2024,23,NOR,22.0,40,[np.int64(43)],43,3,False
-2024,24,VER,22.0,26,[np.int64(31)],31,5,False
-2024,24,NOR,22.0,34,[np.int64(28)],28,6,False
+year,round,driver,pit_loss,predicted_strategy,predicted_pit,predicted_pits,actual_pits,closest_actual,error_laps,within_5_laps
+2024,1,VER,22.0,2-stop,24,"[24, 32]","[np.int64(19), np.int64(39)]",19,5,True
+2024,1,NOR,22.0,2-stop,11,"[11, 19]","[np.int64(15), np.int64(35)]",15,4,True
+2024,2,VER,19.0,1-stop,11,[11],[np.int64(10)],10,1,True
+2024,2,NOR,19.0,2-stop,25,"[25, 33]",[np.int64(39)],39,14,False
+2024,3,NOR,21.0,1-stop,13,[13],"[np.int64(16), np.int64(42)]",16,3,True
+2024,4,VER,22.0,1-stop,13,[13],"[np.int64(18), np.int64(36)]",18,5,True
+2024,4,NOR,22.0,2-stop,13,"[13, 43]","[np.int64(13), np.int64(28)]",13,0,True
+2024,5,VER,22.0,2-stop,12,"[12, 20]",[np.int64(15)],15,3,True
+2024,5,NOR,22.0,1-stop,20,[20],[np.int64(32)],32,12,False
+2024,6,VER,20.0,2-stop,28,"[28, 43]",[np.int64(25)],25,3,True
+2024,6,NOR,20.0,2-stop,22,"[22, 30]",[np.int64(33)],33,11,False
+2024,7,VER,26.0,2-stop,13,"[13, 23]",[np.int64(26)],26,13,False
+2024,7,NOR,26.0,1-stop,21,[21],[np.int64(24)],24,3,True
+2024,8,VER,24.0,2-stop,11,"[11, 68]",[np.int64(54)],54,43,False
+2024,10,VER,22.0,2-stop,11,"[11, 55]","[np.int64(19), np.int64(46)]",19,8,False
+2024,10,NOR,22.0,2-stop,11,"[11, 56]","[np.int64(25), np.int64(49)]",25,14,False
+2024,11,VER,21.0,2-stop,11,"[11, 60]","[np.int64(25), np.int64(53), np.int64(67)]",25,14,False
+2024,11,NOR,21.0,1-stop,22,[22],"[np.int64(25), np.int64(53)]",25,3,True
+2024,12,VER,22.0,2-stop,15,"[15, 25]",[np.int64(40)],40,25,False
+2024,12,NOR,22.0,2-stop,14,"[14, 26]",[np.int64(41)],41,27,False
+2024,13,VER,20.0,1-stop,20,[20],"[np.int64(23), np.int64(51)]",23,3,True
+2024,13,NOR,20.0,1-stop,16,[16],"[np.int64(19), np.int64(47)]",19,3,True
+2024,14,VER,20.0,2-stop,12,"[12, 26]","[np.int64(12), np.int64(30)]",12,0,True
+2024,14,NOR,20.0,2-stop,14,"[14, 26]","[np.int64(17), np.int64(31)]",17,3,True
+2024,15,VER,22.0,1-stop,26,[26],[np.int64(29)],29,3,True
+2024,15,NOR,22.0,1-stop,27,[27],[np.int64(30)],30,3,True
+2024,16,VER,21.0,2-stop,11,"[11, 38]","[np.int64(24), np.int64(43)]",24,13,False
+2024,16,NOR,21.0,1-stop,13,[13],"[np.int64(16), np.int64(34)]",16,3,True
+2024,17,VER,18.0,2-stop,12,"[12, 38]",[np.int64(14)],14,2,True
+2024,17,NOR,18.0,2-stop,11,"[11, 39]",[np.int64(39)],39,28,False
+2024,18,VER,28.0,2-stop,11,"[11, 52]",[np.int64(31)],31,20,False
+2024,18,NOR,28.0,1-stop,17,[17],[np.int64(32)],32,15,False
+2024,19,VER,22.0,2-stop,13,"[13, 21]",[np.int64(27)],27,14,False
+2024,19,NOR,22.0,2-stop,16,"[16, 28]",[np.int64(33)],33,17,False
+2024,20,VER,22.0,2-stop,15,"[15, 24]",[np.int64(28)],28,13,False
+2024,20,NOR,22.0,2-stop,11,"[11, 60]",[np.int64(32)],32,21,False
+2024,22,VER,16.0,1-stop,13,[13],"[np.int64(13), np.int64(29)]",13,0,True
+2024,22,NOR,16.0,2-stop,12,"[12, 39]","[np.int64(11), np.int64(32)]",11,1,True
+2024,23,VER,22.0,2-stop,25,"[25, 33]",[np.int64(43)],43,18,False
+2024,23,NOR,22.0,2-stop,24,"[24, 32]",[np.int64(43)],43,19,False
+2024,24,VER,22.0,1-stop,26,[26],[np.int64(31)],31,5,True
+2024,24,NOR,22.0,2-stop,11,"[11, 47]",[np.int64(28)],28,17,False

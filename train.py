@@ -24,12 +24,39 @@ CONFIG = {
 }
 
 
-def load_data(device: torch.device, delta: bool = False) -> tuple:
-    suffix = '_delta' if delta else ''
+# Feature index map (must match FEATURE_COLS in data/preprocessing.py)
+FEATURE_INDEX = {
+    'LapTimeSeconds': 0, 'StintLength': 1, 'FuelLoad': 2,
+    'AirTemp': 3, 'TrackTemp': 4,
+    'Compound_SOFT': 5, 'Compound_MEDIUM': 6, 'Compound_HARD': 7,
+    'TrackTemp_global': 8,
+}
+INPUT_SIZE = len(FEATURE_INDEX)  # 9
+
+
+def load_data(
+    device: torch.device,
+    delta: bool = False,
+    mask_features: list[str] = None,
+    compound: str = None,          # 'SOFT', 'MEDIUM', or 'HARD' for compound-specific files
+) -> tuple:
+    if compound:
+        # Compound-specific delta tensors (always delta; created by splitting X_train_delta.pt)
+        suffix = f'_delta_{compound.lower()}'
+    else:
+        suffix = '_delta' if delta else ''
     X_train = torch.load(DATA_PROC / f'X_train{suffix}.pt').to(device)
     y_train = torch.load(DATA_PROC / f'y_train{suffix}.pt').to(device)
     X_test  = torch.load(DATA_PROC / f'X_test{suffix}.pt').to(device)
     y_test  = torch.load(DATA_PROC / f'y_test{suffix}.pt').to(device)
+
+    # Ablation: zero out specified feature columns at both train and test time
+    if mask_features:
+        for fname in mask_features:
+            idx = FEATURE_INDEX[fname]
+            X_train[:, :, idx] = 0.0
+            X_test[:,  :, idx] = 0.0
+
     return X_train, y_train, X_test, y_test
 
 
@@ -38,17 +65,23 @@ def train_model(
     config: dict,
     device: torch.device,
     run_name: str = None,
-    delta: bool = False
+    delta: bool = False,
+    mask_features: list[str] = None,
+    compound: str = None,          # 'SOFT', 'MEDIUM', or 'HARD'
 ) -> dict:
 
     name = run_name or model_type
 
+    compound_str = f', compound: {compound}' if compound else ''
     print(f"\n{'='*50}")
-    print(f"Training {name.upper()} ({'delta' if delta else 'absolute'} target)")
+    print(f"Training {name.upper()} ({'delta' if delta else 'absolute'} target"
+          f"{', masked: ' + ','.join(mask_features) if mask_features else ''}{compound_str})")
     print(f"{'='*50}")
 
     # Load data
-    X_train_full, y_train_full, X_test, y_test = load_data(device, delta=delta)
+    X_train_full, y_train_full, X_test, y_test = load_data(
+        device, delta=delta, mask_features=mask_features, compound=compound
+    )
 
     # Train/val split
     dataset    = TensorDataset(X_train_full, y_train_full)
@@ -62,6 +95,7 @@ def train_model(
     # Model, optimizer, loss
     model = get_model(
         model_type,
+        input_size=config.get('input_size', INPUT_SIZE),
         hidden_size=config['hidden_size'],
         num_layers=config['num_layers'],
         dropout=config['dropout']
@@ -236,33 +270,101 @@ def moving_average_baseline(device: torch.device, delta: bool = False) -> float:
 #         improvement = (baseline_mae - mae) / baseline_mae * 100
 #         print(f"{run_name:<22} {mae:>10.6f} {improvement:>+13.1f}%")
 
-if __name__ == '__main__':  # Run 4 — delta target
+# if __name__ == '__main__':  # Run 4 — delta target
+#     device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
+#     print(f"Using device: {device}")
+#     baseline_mae = moving_average_baseline(device, delta=True)
+#     EXPERIMENTS = {
+#         'lstm_baseline_delta':     ('lstm',           {**CONFIG, 'hidden_size': 64,  'num_layers': 2, 'dropout': 0.2}),
+#         'lstm_high_dropout_delta': ('lstm',           {**CONFIG, 'hidden_size': 64,  'num_layers': 2, 'dropout': 0.4}),
+#         'gru_baseline_delta':      ('gru',            {**CONFIG, 'hidden_size': 64,  'num_layers': 2, 'dropout': 0.2}),
+#     }
+#     all_results = {}
+#     for run_name, (model_type, cfg) in EXPERIMENTS.items():
+#         all_results[run_name] = train_model(
+#             model_type, cfg, device, run_name=run_name, delta=True
+#         )
+#     print(f"\n{'='*50}")
+#     print(f"SUMMARY — Run 4 (delta target)")
+#     print(f"{'='*50}")
+#     print(f"{'Run':<28} {'MAE':>10} {'Improvement':>14}")
+#     print(f"{'-'*54}")
+#     print(f"{'Baseline (mean delta)':<28} {baseline_mae:>10.6f} {'—':>14}")
+#     for run_name, results in all_results.items():
+#         mae = results['test_mae']
+#         improvement = (baseline_mae - mae) / baseline_mae * 100
+#         print(f"{run_name:<28} {mae:>10.6f} {improvement:>+13.1f}%")
+
+# if __name__ == '__main__':  # Run 5 — TrackTemp ablation (delta target)
+#     device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
+#     print(f"Using device: {device}")
+#     baseline_mae = moving_average_baseline(device, delta=True)
+#     cfg = {**CONFIG, 'hidden_size': 64, 'num_layers': 2, 'dropout': 0.2}
+#     results = train_model(
+#         'gru', cfg, device,
+#         run_name='gru_baseline_delta_no_tracktemp',
+#         delta=True,
+#         mask_features=['TrackTemp']
+#     )
+#     print(f"\n{'='*50}")
+#     print(f"SUMMARY — Run 5 (TrackTemp ablation)")
+#     print(f"{'='*50}")
+#     print(f"Baseline (mean delta):                      {baseline_mae:.6f}")
+#     print(f"gru_baseline_delta (with TrackTemp):        0.036866   [from Run 4]")
+#     print(f"gru_baseline_delta_no_tracktemp:            {results['test_mae']:.6f}")
+#     diff = results['test_mae'] - 0.036866
+#     print(f"Δ MAE (no_tracktemp − with_tracktemp):      {diff:+.6f}")
+
+if False:  # Run 6 — dual TrackTemp normalization (delta target, 9 features)
     device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
     print(f"Using device: {device}")
 
     baseline_mae = moving_average_baseline(device, delta=True)
 
-    # Same architectures as previous runs; run_name gets _delta suffix so
-    # checkpoints don't overwrite the absolute-target models.
-    EXPERIMENTS = {
-        'lstm_baseline_delta':     ('lstm',           {**CONFIG, 'hidden_size': 64,  'num_layers': 2, 'dropout': 0.2}),
-        'lstm_high_dropout_delta': ('lstm',           {**CONFIG, 'hidden_size': 64,  'num_layers': 2, 'dropout': 0.4}),
-        'gru_baseline_delta':      ('gru',            {**CONFIG, 'hidden_size': 64,  'num_layers': 2, 'dropout': 0.2}),
-    }
+    # Same GRU delta architecture, now with 9-feature input: existing per-race
+    # normalized TrackTemp (index 4) + new globally normalized TrackTemp_global
+    # (index 8). The global feature preserves absolute temperature level that
+    # per-race MinMaxScaler otherwise destroys. Hypothesis: improved strategy
+    # accuracy at temperature-extreme circuits (Las Vegas, Singapore, Bahrain).
+    cfg = {**CONFIG, 'input_size': INPUT_SIZE, 'hidden_size': 64, 'num_layers': 2, 'dropout': 0.2}
+    results = train_model(
+        'gru', cfg, device,
+        run_name='gru_delta_global_tracktemp',
+        delta=True,
+    )
+
+    print(f"\n{'='*50}")
+    print(f"SUMMARY — Run 6 (dual TrackTemp normalization)")
+    print(f"{'='*50}")
+    print(f"Baseline (mean delta):                         {baseline_mae:.6f}")
+    print(f"gru_baseline_delta (9 feat, global TrackTemp): {results['test_mae']:.6f}")
+    diff = results['test_mae'] - 0.036866
+    print(f"Δ MAE vs gru_baseline_delta (Run 4):           {diff:+.6f}")
+
+if __name__ == '__main__':  # Phase 2 — compound-specific GRU models (delta target)
+    device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
+    print(f"Using device: {device}")
+
+    baseline_mae = moving_average_baseline(device, delta=True)
+
+    COMPOUNDS = ['SOFT', 'MEDIUM', 'HARD']
+    cfg = {**CONFIG, 'hidden_size': 64, 'num_layers': 2, 'dropout': 0.2}
 
     all_results = {}
-    for run_name, (model_type, cfg) in EXPERIMENTS.items():
-        all_results[run_name] = train_model(
-            model_type, cfg, device, run_name=run_name, delta=True
+    for compound in COMPOUNDS:
+        run_name = f'gru_delta_{compound.lower()}'
+        all_results[compound] = train_model(
+            'gru', cfg, device,
+            run_name=run_name,
+            compound=compound,
         )
 
     print(f"\n{'='*50}")
-    print(f"SUMMARY — Run 4 (delta target)")
+    print(f"SUMMARY — Phase 2 (compound-specific GRU)")
     print(f"{'='*50}")
-    print(f"{'Run':<28} {'MAE':>10} {'Improvement':>14}")
-    print(f"{'-'*54}")
-    print(f"{'Baseline (mean delta)':<28} {baseline_mae:>10.6f} {'—':>14}")
-    for run_name, results in all_results.items():
-        mae = results['test_mae']
-        improvement = (baseline_mae - mae) / baseline_mae * 100
-        print(f"{run_name:<28} {mae:>10.6f} {improvement:>+13.1f}%")
+    print(f"{'Model':<24} {'MAE':>10} {'vs baseline':>14}")
+    print(f"{'-'*50}")
+    for compound, res in all_results.items():
+        mae = res['test_mae']
+        diff = mae - baseline_mae
+        print(f"gru_delta_{compound.lower():<12} {mae:>10.6f} {diff:>+13.6f}")

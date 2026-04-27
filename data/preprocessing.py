@@ -13,7 +13,8 @@ SEQUENCE_LENGTH = 10
 FEATURE_COLS = [
     'LapTimeSeconds', 'StintLength', 'FuelLoad',
     'AirTemp', 'TrackTemp',
-    'Compound_SOFT', 'Compound_MEDIUM', 'Compound_HARD'
+    'Compound_SOFT', 'Compound_MEDIUM', 'Compound_HARD',
+    'TrackTemp_global',   # absolute temp, globally normalized across all training races
 ]
 TARGET_COL = 'LapTimeSeconds'
 
@@ -69,11 +70,18 @@ def normalize_race(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 def process_split(
     parquet_paths: Path | list[Path],
     split_name: str,
-    delta: bool = False
+    delta: bool = False,
+    global_tt_scaler=None
 ) -> None:
     """
     Load one or more season parquets, build sequences per driver per stint,
     normalize per race, and save tensors.
+
+    global_tt_scaler: fitted MinMaxScaler for TrackTemp across all training
+    races. Applied before per-race normalization so the absolute temperature
+    level is preserved in the TrackTemp_global column (index 8). Must be
+    pre-fitted on training data and passed for both train and test splits so
+    they share the same scale.
 
     If delta=True, saves delta-target tensors with a '_delta' suffix so
     they coexist alongside the absolute-target tensors for comparison.
@@ -81,6 +89,10 @@ def process_split(
     if isinstance(parquet_paths, Path):
         parquet_paths = [parquet_paths]
     df = pd.concat([pd.read_parquet(p) for p in parquet_paths], ignore_index=True)
+
+    # Apply global scaler to raw TrackTemp before per-race normalization overwrites it
+    df['TrackTemp_global'] = global_tt_scaler.transform(df[['TrackTemp']]).flatten()
+
     all_X, all_y = [], []
 
     for (year, round_num), race_df in df.groupby(['Year', 'Round']):
@@ -142,14 +154,45 @@ def detect_stints(driver_df: pd.DataFrame) -> list[pd.DataFrame]:
 
 
 if __name__ == '__main__':
+    # Fit global TrackTemp scaler on training data (2022+2023) so absolute
+    # temperature level is preserved across races after per-race normalization.
+    # Test split uses the same scaler — no lookahead.
+    train_frames = [
+        pd.read_parquet(DATA_RAW / 'season_2022.parquet'),
+        pd.read_parquet(DATA_RAW / 'season_2023.parquet'),
+    ]
+    train_all = pd.concat(train_frames, ignore_index=True)
+    global_tt_scaler = MinMaxScaler()
+    global_tt_scaler.fit(train_all[['TrackTemp']])
+    with open(DATA_PROC / 'global_tracktemp_scaler.pkl', 'wb') as f:
+        pickle.dump(global_tt_scaler, f)
+    print(f"Global TrackTemp scaler saved.")
+    print(f"  Range: {global_tt_scaler.data_min_[0]:.1f}°C – {global_tt_scaler.data_max_[0]:.1f}°C")
+
     # process_split(DATA_RAW / 'season_2023.parquet', 'train')
     # combined 2022 + 2023 for larger training set
-    process_split([DATA_RAW / 'season_2022.parquet', DATA_RAW / 'season_2023.parquet'], 'train')
-    process_split(DATA_RAW / 'season_2024.parquet', 'test')
+    process_split([DATA_RAW / 'season_2022.parquet', DATA_RAW / 'season_2023.parquet'], 'train',
+                  global_tt_scaler=global_tt_scaler)
+    process_split(DATA_RAW / 'season_2024.parquet', 'test',
+                  global_tt_scaler=global_tt_scaler)
 
     # Delta-target versions (saved with _delta suffix, coexist with absolute)
-    process_split([DATA_RAW / 'season_2022.parquet', DATA_RAW / 'season_2023.parquet'], 'train', delta=True)
-    process_split(DATA_RAW / 'season_2024.parquet', 'test', delta=True)
+    process_split([DATA_RAW / 'season_2022.parquet', DATA_RAW / 'season_2023.parquet'], 'train',
+                  delta=True, global_tt_scaler=global_tt_scaler)
+    process_split(DATA_RAW / 'season_2024.parquet', 'test',
+                  delta=True, global_tt_scaler=global_tt_scaler)
+
+    # Split delta tensors by compound for compound-specific model training
+    # Compound one-hot indices: SOFT=5, MEDIUM=6, HARD=7 (in FEATURE_COLS)
+    COMPOUND_IDX = {'SOFT': 5, 'MEDIUM': 6, 'HARD': 7}
+    for split in ('train', 'test'):
+        X = torch.load(DATA_PROC / f'X_{split}_delta.pt')
+        y = torch.load(DATA_PROC / f'y_{split}_delta.pt')
+        for compound, idx in COMPOUND_IDX.items():
+            mask = X[:, -1, idx] == 1.0
+            torch.save(X[mask], DATA_PROC / f'X_{split}_delta_{compound.lower()}.pt')
+            torch.save(y[mask], DATA_PROC / f'y_{split}_delta_{compound.lower()}.pt')
+            print(f"  {split} {compound}: {mask.sum().item()} sequences")
 
     print("\nPreprocessing complete.")
     print(f"Files saved to {DATA_PROC}")
