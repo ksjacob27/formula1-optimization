@@ -1,0 +1,22 @@
+\appendix
+\section{Experiment Reproducibility}
+
+All code is organized as follows:
+
+\begin{itemize}[noitemsep]
+    \item \texttt{data/pipeline.py}: FastF1 data fetching and feature engineering
+    \item \texttt{data/preprocessing.py}: Sequence building, normalization, compound splitting
+    \item \texttt{train.py}: Model training for all configurations
+    \item \texttt{strategy/pit\_optimizer.py}: Strategy simulation and evaluation
+    \item \texttt{models/}: LSTM, GRU, and attention model definitions
+    \item \texttt{results/}: Saved model weights and evaluation CSVs
+\end{itemize}
+
+To reproduce the Phase 5 results from scratch:
+\begin{enumerate}[noitemsep]
+    \item \texttt{python data/preprocessing.py} --- regenerates training and test tensors
+    \item \texttt{python train.py} --- trains the three compound-specific GRU models
+    \item \texttt{PYTHONPATH=. python strategy/pit\_optimizer.py} --- runs strategy evaluation on all 6 drivers across the 2024 season
+\end{enumerate}
+
+Training requires approximately 10 minutes on Apple M-series hardware (MPS backend). The strategy evaluation requires approximately 40--60 minutes due to FastF1 data loading per race.

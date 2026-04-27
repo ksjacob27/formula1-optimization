@@ -1,0 +1,64 @@
+\documentclass[12pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{times}
+\usepackage{setspace}
+\usepackage{titlesec}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+
+\doublespacing
+
+\titleformat{\section}{\normalfont\large\bfseries}{\thesection.}{1em}{}
+\titleformat{\subsection}{\normalfont\normalsize\bfseries}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\normalfont\normalsize\itshape}{\thesubsubsection}{1em}{}
+
+\hypersetup{colorlinks=true, linkcolor=black, citecolor=black, urlcolor=black}
+\lstset{basicstyle=\ttfamily\small, breaklines=true, frame=single, captionpos=b}
+
+\begin{document}
+
+% Title Page
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+{\LARGE\bfseries Deep Learning for Formula 1 Pit Stop Strategy Optimization\par}
+\vspace{1.5cm}
+{\large A project report submitted in partial fulfillment of the requirements for the degree of\par}
+\vspace{0.5cm}
+{\large Master of Science\par}
+\vspace{1cm}
+{\large By\par}
+{\large Kevin Jacob\par}
+\vspace{0.5cm}
+{\large University of Colorado Denver\par}
+\vspace{2cm}
+{\large April 2026\par}
+\end{titlepage}
+
+\newpage
+\input{sections/abstract}
+
+\newpage
+\tableofcontents
+\newpage
+
+\input{sections/introduction}
+\input{sections/background}
+\input{sections/architecture}
+\input{sections/results}
+\input{sections/conclusions}
+\input{sections/references}
+\input{sections/appendix}
+
+\end{document}

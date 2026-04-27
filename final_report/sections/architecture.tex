@@ -1,0 +1,101 @@
+\section{Architecture}
+
+\subsection{High-Level Design}
+
+The system consists of four components arranged in a sequential pipeline:
+
+\begin{enumerate}[noitemsep]
+    \item \textbf{Data pipeline:} Fetches historical lap data via FastF1, applies compound and track status filters, engineers features, and normalizes per race.
+    \item \textbf{Sequence builder:} Constructs sliding-window input sequences (10 laps $\times$ 9 features) and delta lap time targets per driver stint.
+    \item \textbf{GRU model (per compound):} Three independent GRU networks trained on sequences filtered by tire compound (SOFT, MEDIUM, HARD).
+    \item \textbf{Strategy simulator:} At inference time, loads a 2024 race, generates worn and fresh tire predictions for each candidate pit lap, and identifies the first lap where pitting is net positive.
+\end{enumerate}
+
+\subsection{Data Pipeline}
+
+\subsubsection{Data Source and Filtering}
+
+Race data is fetched using FastF1 v3.8.2 for the 2022 (22 rounds), 2023 (22 rounds), and 2024 (24 rounds) seasons. The 2024 season is held out entirely for evaluation; models are trained exclusively on 2022--2023 data.
+
+Three filters are applied to each race:
+\begin{enumerate}[noitemsep]
+    \item \texttt{IsAccurate == True}: removes laps with timing errors
+    \item \texttt{TrackStatus == '1'}: retains only green-flag laps (removes safety car, yellow flag, and red flag laps)
+    \item \texttt{PitInTime.isna()}: removes the pit-entry lap where the driver lifts off
+\end{enumerate}
+
+Only dry-compound laps (SOFT, MEDIUM, HARD) are retained; intermediate and wet tires are excluded. Weather data (air temperature, track temperature) is merged onto each lap via \texttt{pd.merge\_asof} on lap start time.
+
+\subsubsection{Feature Engineering}
+
+The input feature vector for each lap consists of 9 features:
+
+\begin{table}[h]
+\centering
+\caption{Input Features}
+\begin{tabular}{lll}
+\toprule
+Feature & Description & Normalization \\
+\midrule
+LapTimeSeconds & Lap time (s) & Per-race MinMax \\
+StintLength & Laps on current tyre set & Per-race MinMax \\
+FuelLoad & Estimated fuel remaining (kg) & Per-race MinMax \\
+AirTemp & Ambient air temperature (\textdegree C) & Per-race MinMax \\
+TrackTemp & Track surface temperature (\textdegree C) & Per-race MinMax \\
+Compound\_SOFT & 1 if on SOFT tyres & Binary \\
+Compound\_MEDIUM & 1 if on MEDIUM tyres & Binary \\
+Compound\_HARD & 1 if on HARD tyres & Binary \\
+TrackTemp\_global & TrackTemp scaled across all training races & Global MinMax \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Fuel load is estimated as $\max(0, 110 - \text{LapNumber} \times 1.6)$ kg, using a standard burn rate of 1.6 kg/lap from a 110 kg fuel load. Per-race MinMax normalization is applied to continuous features using scikit-learn's \texttt{MinMaxScaler} to account for the wide variation in baseline lap times across circuits (e.g., Monaco 75 s vs.\ Bahrain 97 s). The \texttt{TrackTemp\_global} feature preserves the absolute temperature signal across circuits after per-race normalization removes it from the standard TrackTemp column.
+
+\subsubsection{Sequence Building}
+
+For each driver stint, a sliding window of width 10 generates training samples. A window starting at lap $i$ produces input $X_i \in \mathbb{R}^{10 \times 9}$ and target $y_i = t_{i+10} - t_{i+9}$ (the lap-to-lap delta of the next lap). Stints shorter than 10 laps produce no samples and are discarded. After splitting by compound, the training dataset contains:
+
+\begin{table}[h]
+\centering
+\caption{Training Sequences by Compound (2022--2023)}
+\begin{tabular}{lrr}
+\toprule
+Compound & Train Sequences & Test Sequences (2024) \\
+\midrule
+SOFT   & 4,087  & 200 \\
+MEDIUM & 9,853  & 442 \\
+HARD   & 15,041 & 2,584 \\
+\midrule
+Total  & 28,981 & 3,226 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Model Architecture}
+
+Two recurrent architectures were evaluated: TireLSTM and TireGRU. Both take a sequence of shape $(B, 10, 9)$ as input and produce a scalar delta prediction.
+
+\textbf{TireGRU} (selected final architecture):
+\begin{align}
+\mathbf{h}_t &= \text{GRU}(\mathbf{x}_t, \mathbf{h}_{t-1}) \quad \in \mathbb{R}^{64} \\
+\hat{y} &= \text{Linear}(\text{Dropout}(\mathbf{h}_{10})) \quad \in \mathbb{R}
+\end{align}
+
+Configuration: hidden size 64, 2 layers, dropout 0.2, batch-first. Total parameters: approximately 50,000. Training uses Adam optimizer \cite{kingma2015} with learning rate $10^{-3}$, ReduceLROnPlateau scheduler (patience=3, factor=0.5), gradient clipping at norm 1.0, and early stopping at patience=7 on validation loss.
+
+An LSTM with additive attention \cite{bahdanau2015} was also evaluated. Attention computes a learned weighted sum over all 10 hidden states before the output projection. This variant was the worst performer (MAE $-22.5\%$ vs.\ baseline), as discussed in Section 4.3.
+
+\subsection{Strategy Simulator}
+
+At inference time, the simulator loads a 2024 race for a specific driver, normalizes the data using the same per-race scaler, and evaluates each candidate pit lap as follows:
+
+\textbf{Worn tire projection} (\texttt{predict\_worn}): Starting from the last 10 observed laps, the model auto-regressively predicts 20 future laps. StintLength increments by 1 at each step; FuelLoad decrements proportionally; compound one-hot remains constant.
+
+\textbf{Fresh tire projection} (\texttt{predict\_fresh}): Seeds from the earliest low-tyre-life laps of the target compound (StintLength $< 3$ normalized laps) from earlier in the race, resetting StintLength to 0.
+
+\textbf{Decision criterion}: For each candidate pit lap $\ell$, compute:
+\begin{equation}
+\Delta(\ell) = \underbrace{L_\text{pit} + \sum_{k=1}^{20} \hat{t}_k^\text{fresh}}_{\text{pit cost}} - \underbrace{\sum_{k=1}^{20} \hat{t}_k^\text{worn}}_{\text{stay cost}}
+\end{equation}
+where $L_\text{pit}$ is the normalized pit stop time loss (22 seconds / max lap time; circuit-specific values for Monaco, Singapore, Las Vegas, and Miami). The recommended pit lap is the first $\ell$ where $\Delta(\ell) < 0$. One-stop and two-stop strategies are evaluated by brute-force search over all valid $(p_1)$ and $(p_1, p_2)$ pit lap pairs; the total race time under each strategy determines which is preferred.

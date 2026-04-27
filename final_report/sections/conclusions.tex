@@ -1,0 +1,31 @@
+\section{Conclusions}
+
+\subsection{Summary}
+
+This project demonstrates that publicly available F1 lap time data, combined with compound-specific GRU sequence models and a simulation-based strategy evaluator, can recommend pit stop windows with 52.5\% accuracy across 122 race-driver evaluations from the 2024 season. The result represents a +21.5 percentage-point improvement over a brute-force multi-stop baseline. The GRU architecture with delta target, compound-specific training, and per-race normalization is the configuration that best captures the tire degradation signal relevant to strategy timing.
+
+The project does not meet the $\geq$70\% secondary accuracy criterion set at the outset, though one driver (Russell) reaches exactly 70\% in isolation. The 61.9\% result on the original 2-driver subset (Verstappen and Norris) is the strongest single-configuration result but is best understood as an upper bound on favorable conditions; 52.5\% on 122 evaluations is the honest large-sample estimate.
+
+\subsection{Contributions}
+
+This project makes the following contributions:
+
+\begin{itemize}[noitemsep]
+    \item A full open-source pipeline for F1 pit stop strategy evaluation using only publicly available data (FastF1 API, 2022--2024 seasons).
+    \item An empirical demonstration that compound-specific sequence modeling dramatically outperforms shared-compound models for strategy timing ($+26.2$ pp).
+    \item A systematic ablation showing that MAE on lap time prediction is a poor proxy for strategy accuracy, with three experiments showing conflicting directions.
+    \item Quantification of the driver identity gap: per-driver accuracy ranges from 40\% to 70\% in the same evaluation, setting a clear target for future work.
+    \item Documentation of five strategy-level experimental phases including two fully reverted experiments with root-cause analysis.
+\end{itemize}
+
+\subsection{Future Work}
+
+The most impactful near-term improvement is adding driver and team identity features. Even a simple driver one-hot encoding over the 20 F1 drivers would allow the model to learn driver-specific degradation tendencies and strategy preferences. Based on the Phase 5 analysis, this feature alone could close a substantial portion of the per-driver accuracy gap.
+
+Additional directions include:
+\begin{itemize}[noitemsep]
+    \item \textbf{More training data}: Adding 2021 and 2020 season data would triple the training set. The LSTM deep ablation showed that deeper models directly benefit from more data.
+    \item \textbf{Track identity features}: Circuit-specific embeddings would allow the model to learn that Monaco and Singapore have different degradation profiles than Bahrain and Spa.
+    \item \textbf{Competitor position}: Real teams pit partly based on gap to the driver ahead or behind. Including relative position would move the system closer to true strategy modeling.
+    \item \textbf{Transformer architecture}: With driver/track identity tokens, a transformer encoder \cite{vaswani2017} over the 10-lap sequence may outperform the GRU, as cross-stint attention becomes meaningful once distinct sequence types are identifiable.
+\end{itemize}

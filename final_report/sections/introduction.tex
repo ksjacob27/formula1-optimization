@@ -1,0 +1,21 @@
+\section{Introduction}
+
+\subsection{Problem}
+
+Formula 1 race strategy is determined in real time by a team of engineers who must decide exactly when a driver should pit for fresh tires. This decision is among the highest-leverage in motorsport: a well-timed pit stop can gain 5--10 seconds of net track position through an undercut, while a poorly timed stop can cost a podium. The optimal lap to pit depends simultaneously on current tire degradation rate, remaining fuel load, ambient temperature, track position relative to competitors, and expected race pace on different compounds.
+
+Professional teams invest millions of dollars in proprietary simulation software that models these interactions with telemetry data, real-time competitor tracking, and historical tire behavior. This capability is entirely unavailable to independent researchers, broadcasters, and fans. No publicly available tool provides reliable, quantitative pit stop recommendations grounded in data.
+
+\subsection{Project Statement}
+
+This project develops and evaluates a deep learning system that recommends Formula 1 pit stop windows by learning tire degradation patterns from historical lap time data and simulating the net time cost of pitting at each candidate lap.
+
+\subsection{Approach}
+
+The approach involves three components: (1) a data pipeline built on the FastF1 API \cite{fastf1} that extracts lap time, tire compound, fuel load, and weather features from 2022--2023 race data; (2) a GRU sequence model \cite{cho2014} trained to predict the next lap's tire degradation given the past 10 laps of race context; and (3) a simulation framework that uses the trained model to project race time under two futures---stay on worn tires versus pit for fresh tires---at each candidate lap, identifying the first lap where pitting becomes net positive.
+
+The full experimental arc spans nine model configurations, two data pipeline variants, and five strategy-level phases. Both positive and negative results are documented to characterize which design choices matter most.
+
+\subsection{Organization of this Report}
+
+Section 2 covers the relevant background: F1 tire degradation, sequence modeling with recurrent networks, and related work. Section 3 describes the system architecture including the data pipeline, model designs, and strategy simulator. Section 4 presents the methodology, ablation results, and strategy evaluation across all phases. Section 5 summarizes contributions and future work.
