@@ -2,11 +2,11 @@
 
 \subsection{High-Level Design}
 
-The system consists of four components arranged in a sequential pipeline:
+The system consists of 3 main components arranged in a sequential pipeline:
 
 \begin{enumerate}[noitemsep]
     \item \textbf{Data pipeline:} Fetches historical lap data via FastF1, applies compound and track status filters, engineers features, and normalizes per race.
-    \item \textbf{Sequence builder:} Constructs sliding-window input sequences (10 laps $\times$ 9 features) and delta lap time targets per driver stint.
+    % \item \textbf{Sequence builder:} Constructs sliding-window input sequences (10 laps $\times$ 9 features) and delta lap time targets per driver stint.
     \item \textbf{GRU model (per compound):} Three independent GRU networks trained on sequences filtered by tire compound (SOFT, MEDIUM, HARD).
     \item \textbf{Strategy simulator:} At inference time, loads a 2024 race, generates worn and fresh tire predictions for each candidate pit lap, and identifies the first lap where pitting is net positive.
 \end{enumerate}
@@ -15,7 +15,11 @@ The system consists of four components arranged in a sequential pipeline:
 
 \subsubsection{Data Source and Filtering}
 
-Race data is fetched using FastF1 v3.8.2 for the 2022 (22 rounds), 2023 (22 rounds), and 2024 (24 rounds) seasons. The 2024 season is held out entirely for evaluation; models are trained exclusively on 2022--2023 data.
+Race data is fetched using FastF1 v3.8.2 for the 2022 (22 rounds), 2023 (22 rounds), and 2024 (24 rounds) seasons. The 2024 season is held out 
+entirely for evaluation; models are trained exclusively on 2022--2023 data. The model is trained on a temporal split between seasons rather than a random split across all seasons in order to prevent data leakage and ensure evaluation integrity.
+Races within the same season share car perofmrance and trajectories and ragulatory context, so random samplying would allow the model to learn season specific patterns that would inflate the accuracy results without reflecting generalization.
+For example, if the model is trained on car data from some races in 2024, then it could use the learned pattern from 2024 to perfectly predict
+ the pit stop timing for the rest of the 2024 races that reside in the evaulation set.
 
 Three filters are applied to each race:
 \begin{enumerate}[noitemsep]
@@ -23,8 +27,8 @@ Three filters are applied to each race:
     \item \texttt{TrackStatus == '1'}: retains only green-flag laps (removes safety car, yellow flag, and red flag laps)
     \item \texttt{PitInTime.isna()}: removes the pit-entry lap where the driver lifts off
 \end{enumerate}
-
-Only dry-compound laps (SOFT, MEDIUM, HARD) are retained; intermediate and wet tires are excluded. Weather data (air temperature, track temperature) is merged onto each lap via \texttt{pd.merge\_asof} on lap start time.
+Only dry-compound laps (SOFT, MEDIUM, HARD) are retained, and wet condition tires such as `intermediates' and `wet' are excluded.
+ Weather data (air temperature, track temperature) is merged onto each lap via \texttt{pd.merge\_asof} on lap start time.
 
 \subsubsection{Feature Engineering}
 
@@ -74,28 +78,37 @@ Total  & 28,981 & 3,226 \\
 
 \subsection{Model Architecture}
 
-Two recurrent architectures were evaluated: TireLSTM and TireGRU. Both take a sequence of shape $(B, 10, 9)$ as input and produce a scalar delta prediction.
+The project evalutes two primary recurrent architectures: TireLSTM and TireGRU. Both take a sequence of shape $(B, 10, 9)$ as input and produce 
+a scalar delta prediction.
 
 \textbf{TireGRU} (selected final architecture):
 \begin{align}
 \mathbf{h}_t &= \text{GRU}(\mathbf{x}_t, \mathbf{h}_{t-1}) \quad \in \mathbb{R}^{64} \\
-\hat{y} &= \text{Linear}(\text{Dropout}(\mathbf{h}_{10})) \quad \in \mathbb{R}
+\hat{y} &= \text{Linear}(\text{Dropout}(\mathbf{h}_{10})) \quad \in \mathbb{R} 
 \end{align}
 
-Configuration: hidden size 64, 2 layers, dropout 0.2, batch-first. Total parameters: approximately 50,000. Training uses Adam optimizer \cite{kingma2015} with learning rate $10^{-3}$, ReduceLROnPlateau scheduler (patience=3, factor=0.5), gradient clipping at norm 1.0, and early stopping at patience=7 on validation loss.
+\noindent Configuration: hidden size 64, 2 layers, dropout 0.2, batch-first. \\
+Total parameters: approximately 50,000. \\
+Training uses Adam optimizer~\cite{kingma2015} with learning rate $10^{-3}$, ReduceLROnPlateau scheduler (patience=3, factor=0.5), gradient clipping at norm 1.0, and early stopping at patience=7 on validation loss.
 
-An LSTM with additive attention \cite{bahdanau2015} was also evaluated. Attention computes a learned weighted sum over all 10 hidden states before the output projection. This variant was the worst performer (MAE $-22.5\%$ vs.\ baseline), as discussed in Section 4.3.
+An LSTM with additive attention~\cite{bahdanau2015} was also evaluated. Attention computes a learned weighted sum over all 10 hidden states before 
+the output projection. This variant was the worst performer (MAE $-22.5\%$ vs.\ baseline), as discussed in Section 4.3.
 
 \subsection{Strategy Simulator}
 
-At inference time, the simulator loads a 2024 race for a specific driver, normalizes the data using the same per-race scaler, and evaluates each candidate pit lap as follows:
+At inference time, the simulator loads a 2024 race for a specific driver, normalizes the data using the same per-race scaler, and evaluates each 
+candidate pit lap as follows:
 
-\textbf{Worn tire projection} (\texttt{predict\_worn}): Starting from the last 10 observed laps, the model auto-regressively predicts 20 future laps. StintLength increments by 1 at each step; FuelLoad decrements proportionally; compound one-hot remains constant.
+\textbf{Worn tire projection} (\texttt{predict\_worn}): Starting from the last 10 observed laps, the model auto-regressively predicts 20 future laps.
+ StintLength increments by 1 at each step while FuelLoad decrements proportionally, and compound one-hot remains constant.
 
-\textbf{Fresh tire projection} (\texttt{predict\_fresh}): Seeds from the earliest low-tyre-life laps of the target compound (StintLength $< 3$ normalized laps) from earlier in the race, resetting StintLength to 0.
+\textbf{Fresh tire projection} (\texttt{predict\_fresh}): Seeds from the earliest low-tyre-life laps of the target compound
+ (StintLength $< 3$ normalized laps) from earlier in the race, resetting StintLength to 0.
 
 \textbf{Decision criterion}: For each candidate pit lap $\ell$, compute:
 \begin{equation}
 \Delta(\ell) = \underbrace{L_\text{pit} + \sum_{k=1}^{20} \hat{t}_k^\text{fresh}}_{\text{pit cost}} - \underbrace{\sum_{k=1}^{20} \hat{t}_k^\text{worn}}_{\text{stay cost}}
 \end{equation}
-where $L_\text{pit}$ is the normalized pit stop time loss (22 seconds / max lap time; circuit-specific values for Monaco, Singapore, Las Vegas, and Miami). The recommended pit lap is the first $\ell$ where $\Delta(\ell) < 0$. One-stop and two-stop strategies are evaluated by brute-force search over all valid $(p_1)$ and $(p_1, p_2)$ pit lap pairs; the total race time under each strategy determines which is preferred.
+where $L_\text{pit}$ is the normalized pit stop time loss (22 seconds / max lap time). Pit loss values are sourced per circuit than remaining constant. Las Vegas, Singapore, Monaco, and Miami are shown to be deviating notably from the 22 second default value.
+Since $L_\text{pit}$ defines the threshold a stop must overcome to be net-positive, a uniform value would systematically over-recommend stops at slow pit-lane circuits and under-recommend them at fast ones, shifting the optimal pit window by several laps.
+ The recommended pit lap is the first $\ell$ where $\Delta(\ell) < 0$. One-stop and two-stop strategies are evaluated by brute-force search over all valid $(p_1)$ and $(p_1, p_2)$ pit lap pairs; the total race time under each strategy determines which is preferred.
