@@ -4,23 +4,43 @@
 
 \subsubsection{Formula 1 Tire Degradation and Pit Stop Strategy}
 
-Formula 1 regulations require each driver to use at least two different tire compounds during a dry race. The three primary compounds---SOFT, MEDIUM, and HARD---differ in grip level and durability. SOFT tires offer peak grip for 15--25 laps before significant degradation; HARD tires last 35--50 laps but generate less grip throughout. As a stint progresses, lap times increase monotonically due to tire wear, providing a time-series signal that, in principle, predicts when pitting becomes beneficial.
+Formula 1 regulations require each driver to use at least two different tire compounds during a dry race. The three primary 
+compounds---SOFT, MEDIUM, and HARD---differ in grip level and durability. SOFT tires offer peak grip and are considered the fastest, however, only
+for $\sim$15--25 laps before 
+significant degradation; HARD tires are considered the slowest but last $\sim$35--50 laps and generate less grip throughout. Furthermore, tire degradation is influenced by numerous factors such as track temperature, compound type, driving attitude, etc.
+As a stint progresses, lap times increase monotonically due to tire wear, providing a time-series signal 
+that, in theory, should predict when pitting becomes beneficial.
 
-The pit stop decision is not just about when tires degrade---it involves strategic considerations such as the undercut (pitting early to gain position through fresher tires), the overcut (staying out while a competitor pits, maintaining track position), and the safety car window (pitting under a safety car to take a ``free'' stop). This project addresses the tire degradation component only; competitor position and safety car timing are treated as out-of-scope.
+However, the pit stop decision is not just about when tires degrade. It involves strategic considerations such as the undercut 
+(pitting early to gain position through fresher tires), the overcut (staying out while a competitor pits, maintaining track 
+position), and the safety car window (pitting under a safety car to take a ``free'' stop). This project addresses the tire 
+degradation component only; competitor position and safety car timing are treated as out-of-scope.
 
 \subsubsection{Recurrent Neural Networks for Time Series}
 
-Long Short-Term Memory (LSTM) networks \cite{hochreiter1997} and Gated Recurrent Units (GRUs) \cite{cho2014} are the dominant architectures for sequential prediction tasks. Both maintain a hidden state that summarizes prior context, updated at each timestep through gating mechanisms.
+Long Short-Term Memory (LSTM) networks \cite{hochreiter1997} and Gated Recurrent Units (GRUs) \cite{cho2014} are the dominant 
+architectures for sequential prediction tasks. Both maintain a hidden state that summarizes prior context, updated at each
+ timestep through gating mechanisms.
 
-LSTM cells use three gates (input, forget, output) and a separate cell state, giving them strong capacity for long-range dependencies at the cost of higher parameter counts. GRU cells use two gates (reset, update) and no separate cell state, making them faster to train and less prone to overfitting on moderate-sized datasets. For short sequences (10--20 laps), the memory advantage of LSTM is less relevant, and GRU has been shown to match or outperform LSTM in similar settings \cite{chung2014}.
+LSTM cells use three gates (input, forget, output) and a separate cell state, giving them strong capacity for long-range
+ dependencies at the cost of higher parameter counts. GRU cells use two gates (reset, update) and no separate cell state,
+  making them faster to train and less prone to overfitting on moderate-sized datasets. For short sequences (10--20 laps),
+   the memory advantage of LSTM is less relevant, and GRU has been shown to match or outperform LSTM in similar settings\cite{chung2014}.
 
-Attention mechanisms \cite{bahdanau2015} extend recurrent models by computing a weighted sum over all hidden states rather than using only the final state, allowing the model to selectively focus on the most informative timesteps. Their benefit is most pronounced on sequences of 20 or more steps where individual timesteps carry distinct signals.
+Attention mechanisms\cite{bahdanau2015} extend recurrent models by computing a weighted sum over 
+all hidden states rather than using only the final state, allowing the model to selectively focus on the most 
+informative timesteps. Their benefit is most pronounced on sequences of 20 or more steps where individual timesteps 
+carry distinct signals.
 
 \subsubsection{Delta Prediction for Degradation Modeling}
 
-Standard sequence models trained to predict absolute lap time face a systematic bias: the model must first ``explain'' the circuit's baseline lap time before it can model the degradation delta on top of it. This makes it difficult to learn compound-specific degradation slopes.
+Standard sequence models trained to predict absolute lap time face a systematic bias: the model must first ``explain'' 
+the circuit's baseline lap time before it can model the degradation delta on top of it. This makes it difficult to learn 
+compound-specific degradation slopes.
 
-Reformulating the target as $\Delta t = t_{n+1} - t_n$ (lap-to-lap change) decouples the degradation signal from the baseline, allowing the model to focus exclusively on the rate of change. This formulation is directly motivated by degradation physics: tire wear increases lap time at a rate that depends on compound hardness and track temperature, not on the absolute lap time.
+Reformulating the target as $\Delta t = t_{n+1} - t_n$ (lap-to-lap change) decouples the degradation signal from the baseline, 
+allowing the model to focus exclusively on the rate of change. This formulation is directly motivated by degradation physics: 
+tire wear increases lap time at a rate that depends on compound hardness and track temperature, not on the absolute lap time.
 
 \subsection{Related Work}
 
