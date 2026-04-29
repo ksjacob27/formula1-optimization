@@ -19,7 +19,7 @@ degradation component only; competitor position and safety car timing are treate
 \subsubsection{Recurrent Neural Networks for Time Series}
 
 Long Short-Term Memory (LSTM) networks \cite{hochreiter1997} and Gated Recurrent Units (GRUs) \cite{cho2014} are the dominant 
-architectures for sequential prediction tasks. Both maintain a hidden state that summarizes prior context, updated at each
+architectures for sequential prediction tasks. Both maintain a hidden state that ummarizes prior context, updated at each
  timestep through gating mechanisms.
 
 LSTM cells use three gates (input, forget, output) and a separate cell state, giving them strong capacity for long-range
@@ -39,22 +39,24 @@ the circuit's baseline lap time before it can model the degradation delta on top
 compound-specific degradation slopes.
 
 Reformulating the target as $\Delta t = t_{n+1} - t_n$ (lap-to-lap change) decouples the degradation signal from the baseline, 
-allowing the model to focus exclusively on the rate of change. This formulation is directly motivated by degradation physics: 
+allowing the model to focus exclusively on the rate of change. This formulation is directly motivated by degradation physics, which suggests that
 tire wear increases lap time at a rate that depends on compound hardness and track temperature, not on the absolute lap time.
 
 \subsection{Related Work}
 
 \subsubsection{Race Strategy Simulation}
 
-Commercial F1 strategy tools (e.g., McLaren Electronic Systems, Williams Racing Analytics) use physics-based tire models combined with Monte Carlo simulation over opponent strategies \cite{mcaleer2023}. These systems require real-time telemetry and proprietary tire compound data, neither of which is publicly available.
+As initially stated in my proposal, Commercial F1 strategy tools (e.g., McLaren Electronic Systems, Williams Racing Analytics) use physics-based tire models combined with Monte Carlo simulations over opponent strategies \cite{mcaleer2023}. These systems require real-time telemetry and proprietary tire compound data, neither of which are available for public use.
 
-Academic work on F1 strategy is limited. Heilmeier et al.\ \cite{heilmeier2020} develop a minimum-lap-time race simulation that incorporates tire degradation, fuel load, and safety car probability, using an energy-based tire model fitted on historical sector time data. Their approach requires compound-specific parameters obtained from team data and focuses on pre-race strategy planning rather than real-time window detection.
+Academic work on F1 strategy is severely limited due to the lack of publicly available data. Heilmeier \ \cite{heilmeier2020} develop a minimum-lap-time race simulation that incorporates tire degradation, fuel load, and safety car probability, using an energy-based tire model fitted on historical sector time data. Their approach requires compound-specific parameters obtained from team data and focuses on pre-race strategy planning rather than real-time window detection.
 
-Tulabandhula and Rudin \cite{tulabandhula2014} apply machine learning to sports decision problems more broadly, demonstrating that data-driven approaches can approximate expert judgment in complex sequential settings. More recently, reinforcement learning has been applied to F1 pit stop timing \cite{cheng2021}, treating the strategy decision as a Markov decision process. These approaches require simulator environments that are difficult to calibrate without access to official team data.
+Tulabandhula and Rudin \cite{tulabandhula2014} apply machine learning to sports decision problems more broadly, demonstrating that data-driven approaches can approximate expert judgment in complex sequential settings. More recently, reinforcement learning has been applied to F1 pit stop timing \cite{cheng2021}, treating the strategy decision as a Markov decision process. These approaches are severely limited by lack of resoucres as they require simulator environments that are difficult to calibrate without access to official team data.
 
 \subsubsection{Tire Degradation Modeling}
 
-Tire degradation has been modeled as a polynomial function of stint length in physics-based simulators \cite{heilmeier2020}. Data-driven approaches include Gaussian process regression over lap time residuals \cite{loiacono2011} and recurrent models trained on historical sector times. To our knowledge, no published work applies compound-specific GRU models to pit stop window detection using publicly available lap data.
+Tire degradation has been modeled as a polynomial function of stint length in physics-based simulators \cite{heilmeier2020}. Data-driven approaches 
+include Gaussian process regression over lap time residuals \cite{loiacono2011} and recurrent models trained on historical sector times. To my
+ knowledge, no published work applies compound-specific GRU models to pit stop window detection using publicly available lap data.
 
 \subsubsection{Publicly Available F1 Data}
 
