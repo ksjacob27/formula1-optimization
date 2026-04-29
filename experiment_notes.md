@@ -8,7 +8,7 @@ The broader motivation: F1 pit stop strategy is one of the highest-leverage deci
 
 ### Success Criteria
 - **Primary:** >10% MAE improvement over moving average baseline on 2024 test races
-- **Secondary:** ≥70% of pit window recommendations within ±5 laps of actual pit stop (relaxed from ±2; real F1 strategy decisions vary by 5–10 laps across teams, making ±2 tighter than expert variance)
+- **Secondary:** ≥70% of pit window recommendations within +/-5 laps of actual pit stop (relaxed from +/-2; real F1 strategy decisions vary by 5–10 laps across teams, making +/-2 tighter than expert variance)
 
 ---
 
@@ -461,7 +461,7 @@ R5 VER: TyreLife values: [1.0 → 33.0]
 Model loaded: `results/best_gru_baseline.pt` (trained on 2022+2023, MAE=0.0589)
 
 #### Full Results
-| Round | Circuit | Driver | Predicted Pit | Actual Pit(s) | Error | Within ±2 |
+| Round | Circuit | Driver | Predicted Pit | Actual Pit(s) | Error | Within +/-2 |
 |-------|---------|--------|--------------|---------------|-------|-----------|
 | R1 | Bahrain | VER | 35 | 19, 39 | 4 (vs 39) | ✗ |
 | R2 | Saudi Arabia | VER | 13 | 10 | 3 | ✗ |
@@ -469,7 +469,7 @@ Model loaded: `results/best_gru_baseline.pt` (trained on 2022+2023, MAE=0.0589)
 | R4 | Japan | VER | 16 | 18, 36 | 2 | ✓ |
 | R5 | China | VER | 20 | 15 | 5 | ✗ |
 
-**Overall accuracy (within ±2 laps): 20% (1 of 5 races)**
+**Overall accuracy (within +/-2 laps): 20% (1 of 5 races)**
 Secondary success criterion (≥70%): ✗ FAILED
 
 #### Pit Window Detection Per Race
@@ -560,7 +560,7 @@ The model consistently recommends pit windows **3–7 laps later than actual.** 
 
 #### Success Criteria Summary (Eval Run 1 — 5 races)
 - ✅ **Primary PASSED** — GRU achieves ~39% MAE improvement over moving average baseline
-- ❌ **Secondary FAILED** — 20% strategy accuracy (1/5 races within ±2 laps)
+- ❌ **Secondary FAILED** — 20% strategy accuracy (1/5 races within +/-2 laps)
 
 ---
 
@@ -571,7 +571,7 @@ The model consistently recommends pit windows **3–7 laps later than actual.** 
 2. **Expanded from 5 → 42 evaluations** — all 24 rounds of 2024, VER and NOR as evaluation drivers. Rounds where a driver had no clean laps (e.g., Brazil R21 — wet race, TrackStatus filtering removed all laps) were skipped automatically.
 3. **Plotting disabled by default** — `evaluate_strategy_across_races(..., plot=False)` to avoid 48 plot windows.
 
-**Results: 9.5% accuracy (4/42 race-driver combinations within ±2 laps)**
+**Results: 9.5% accuracy (4/42 race-driver combinations within +/-2 laps)**
 
 | Round | Circuit | Driver | Predicted | Actual | Error | ✓ |
 |-------|---------|--------|-----------|--------|-------|---|
@@ -601,14 +601,14 @@ The model consistently recommends pit windows **3–7 laps later than actual.** 
 
 **Key findings:**
 1. **The original 20% (1/5) was optimistic** — based on a lucky sample. The true accuracy on 42 evaluations is 9.5%, a substantially more reliable estimate.
-2. **Per-circuit pit loss helped on unusual circuits** — Monaco, Las Vegas, and Miami are all within ±2 laps. These are precisely the circuits where the 22s default would have been most wrong. But it couldn't compensate for the fundamental late-bias on standard circuits.
+2. **Per-circuit pit loss helped on unusual circuits** — Monaco, Las Vegas, and Miami are all within +/-2 laps. These are precisely the circuits where the 22s default would have been most wrong. But it couldn't compensate for the fundamental late-bias on standard circuits.
 3. **Mean error jumped to 8.0 laps** — far worse than the 3–7 lap range observed in Eval Run 1. The expanded set exposed many more circuits where the model is catastrophically late.
 4. **The late-bias is the dominant failure mode** — model consistently recommends staying out too long before pitting. Suggests `predict_worn` underestimates degradation slope, causing the delta crossover to arrive too late.
 5. **Brazil R21 limitation** — TrackStatus='1' filtering removes all laps from wet/heavy-SC races. A known limitation of the filtering approach.
 
 #### Updated Success Criteria (Eval Run 2 — 42 races)
 - ✅ **Primary PASSED** — GRU achieves ~40% MAE improvement over moving average baseline
-- ❌ **Secondary FAILED** — 9.5% strategy accuracy (4/42 race-driver combos within ±2 laps)
+- ❌ **Secondary FAILED** — 9.5% strategy accuracy (4/42 race-driver combos within +/-2 laps)
 
 **Next experiment: delta prediction** — change the training target from absolute lap time to the change in lap time (`ΔLapTime = LapTime[t+1] − LapTime[t]`). Hypothesis: forces the model to explicitly learn degradation slope, which should reduce the late-prediction bias that drives the 8-lap mean error.
 
@@ -645,7 +645,7 @@ Note: this baseline is *smaller* than the absolute baseline (0.060526) not becau
 
 **Strategy accuracy: 19.0% (8/42) — doubled from 9.5% in Eval Run 2**
 
-Correct predictions (within ±2 laps):
+Correct predictions (within +/-2 laps):
 | Round | Circuit | Driver | Predicted | Actual | Error |
 |-------|---------|--------|-----------|--------|-------|
 | R2 | Saudi Arabia | NOR | 39 | 39 | **0** |
@@ -799,7 +799,7 @@ This is the third consecutive experiment where MAE and strategy accuracy moved i
 - `find_optimal_pit_window()` now calls `find_optimal_two_stop()` from `start_lap=SEQUENCE_LENGTH` and compares total normalized race time for 1-stop vs 2-stop
 - `recommended_pit_laps` returns `[pit_lap]` (1-stop) or `[pit_1, pit_2]` (2-stop) depending on which total is lower
 - Scoring: first predicted pit vs nearest actual pit (closest-actual, forgiving of strategy-count mismatches)
-- Success window: ±5 laps (relaxed from ±2 in earlier phases)
+- Success window: +/-5 laps (relaxed from +/-2 in earlier phases)
 
 **Bug fixed during this phase:** `actual_sorted` leftover reference from bijective scoring caused every `results.append()` to throw a `NameError` silently, resulting in an empty DataFrame. Fixed to `actual_pit_laps`.
 
@@ -807,7 +807,7 @@ This is the third consecutive experiment where MAE and strategy accuracy moved i
 
 | Metric | Phase 0 (Run 4) | Phase 1 (multi-stop) |
 |--------|----------------|----------------------|
-| Strategy accuracy ±5 laps | 31.0% | **35.7%** |
+| Strategy accuracy +/-5 laps | 31.0% | **35.7%** |
 | Races evaluated | 42 | 42 |
 | Model | gru_baseline_delta (8-feat) | gru_baseline_delta (8-feat) |
 
@@ -842,7 +842,7 @@ SOFT MAE is higher due to having 3.4× fewer sequences. MEDIUM and HARD approxim
 
 | Metric | Run 4 | Phase 1 | Phase 2 (2 drivers) | Phase 5 (6 drivers) |
 |--------|-------|---------|---------------------|---------------------|
-| Strategy accuracy ±5 laps | 31.0% | 35.7% | **61.9%** | **52.5%** |
+| Strategy accuracy +/-5 laps | 31.0% | 35.7% | **61.9%** | **52.5%** |
 | Sample size | 42 | 42 | 42 | 122 |
 | Model | shared GRU | shared GRU + multi-stop | compound GRU + multi-stop | compound GRU + multi-stop |
 
@@ -854,7 +854,7 @@ SOFT MAE is higher due to having 3.4× fewer sequences. MEDIUM and HARD approxim
 
 **Remaining failures (16/42):**
 - 5 early 2-stop triggers (pit_1 ≤ lap 15): R10 VER/NOR, R12 NOR, R16 VER, R18 NOR — model fires 2-stop before tyres are meaningfully worn
-- 7 errors within ±6–8 laps: R2 NOR, R4 VER, R10 VER, R11 VER, R13 NOR, R16 NOR, R20 VER — tantalizingly close to ±5 cutoff
+- 7 errors within +/-6–8 laps: R2 NOR, R4 VER, R10 VER, R11 VER, R13 NOR, R16 NOR, R20 VER — tantalizingly close to +/-5 cutoff
 - 4 large misses (>10 laps, structural): R12 NOR (27 laps), R17 NOR (26 laps), R18 NOR (21 laps)
 
 **Gap to 70% target:** Need 4 more correct (30/42). The 7 close failures are primary targets.
@@ -965,7 +965,7 @@ The regression pattern in the per-race table shows many 2-stop predictions with 
 The 61.9% on VER+NOR was a favourable subset. Both drivers run aggressive strategy at the Red Bull/McLaren level, generating clear degradation signals the model fits well. Mercedes drivers in 2024 ran more conservative strategies on cars with different tyre wear characteristics — the compound-specific GRUs (trained on aggregated 2022+2023 stints) systematically misjudge pit timing for these cars. This is consistent with the project's known limitation: the model has no driver/team identity feature.
 
 **What this means for the report:**
-The 52.5% number on 122 evaluations is the more honest headline metric. It is still **+21.5pp over the 31% baseline** (Phase 0 single-stop with ±5 laps). The +9.4pp drop from the 2-driver subset is itself a useful finding: it quantifies how much driver/team selection inflates strategy-evaluation numbers in the absence of identity features.
+The 52.5% number on 122 evaluations is the more honest headline metric. It is still **+21.5pp over the 31% baseline** (Phase 0 single-stop with +/-5 laps). The +9.4pp drop from the 2-driver subset is itself a useful finding: it quantifies how much driver/team selection inflates strategy-evaluation numbers in the absence of identity features.
 
 | Artifact | Description |
 |----------|-------------|
@@ -980,7 +980,7 @@ The 52.5% number on 122 evaluations is the more honest headline metric. It is st
 
 ### Best Result — Phase 2 Compound-Specific GRU (2026-04-26)
 
-**Strategy accuracy: 61.9% within ±5 laps** — best result across all experiments.
+**Strategy accuracy: 61.9% within +/-5 laps** — best result across all experiments.
 
 **Model:** Three independent GRUs, one per tyre compound. Each trained on the delta (ΔLapTime) target using compound-filtered sequences from 2022+2023 training data.
 

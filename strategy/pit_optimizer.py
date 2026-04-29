@@ -19,7 +19,7 @@ PIT_LOSS_SECONDS       = 22.0
 # Per-circuit pit loss (seconds): time penalty for diverting through the pit
 # lane vs continuing at racing speed. Values are published F1 strategy estimates
 # and reflect the 2024 calendar layout. Within-circuit variation across years
-# is small (±1s) unless the pit lane is rebuilt.
+# is small (+/-1s) unless the pit lane is rebuilt.
 # Source: F1 broadcast strategy graphics, Mercedes/Ferrari strategy briefings,
 # and pit-lane length / pit-speed-limit calculations.
 PIT_LOSS_BY_ROUND_2024 = {
@@ -719,7 +719,7 @@ def evaluate_strategy_across_races(
             strategy_label = f"{len(predicted_sorted)}-stop"
             print(f"  Predicted pit lap(s): {predicted_sorted} ({strategy_label})")
             print(f"  Actual pit lap(s):    {list(actual_pit_laps)}")
-            print(f"  Error: {error} laps | Within ±5: {'✓' if within_5 else '✗'}")
+            print(f"  Error: {error} laps | Within +/-5: {'✓' if within_5 else '✗'}")
 
             if plot:
                 plot_strategy(
@@ -831,7 +831,7 @@ if __name__ == '__main__':
                     'actual_pits', 'error_laps', 'within_5_laps']].to_string(index=False))
 
     accuracy = summary['within_5_laps'].mean() * 100
-    print(f"\nOverall accuracy (within ±5 laps): {accuracy:.1f}%")
+    print(f"\nOverall accuracy (within +/-5 laps): {accuracy:.1f}%")
     print(f"Races evaluated: {len(summary)}")
     print(f"Secondary success criterion (≥70%): {'✓ PASSED' if accuracy >= 70 else '✗ FAILED'}")
 
