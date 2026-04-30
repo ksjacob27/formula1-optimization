@@ -54,7 +54,13 @@ TrackTemp\_global & TrackTemp scaled across all training races & Global MinMax \
 \end{tabular}
 \end{table}
 
-Fuel load is estimated as $\max(0, 110 - \text{LapNumber} \times 1.6)$ kg, using a standard burn rate of 1.6 kg/lap from a 110 kg fuel load. Per-race MinMax normalization is applied to continuous features using scikit-learn's \texttt{MinMaxScaler} to account for the wide variation in baseline lap times across circuits (e.g., Monaco 75 s vs.\ Bahrain 97 s). The \texttt{TrackTemp\_global} feature preserves the absolute temperature signal across circuits after per-race normalization removes it from the standard TrackTemp column.
+Fuel load is estimated as $\max(0, 110 - \text{LapNumber} \times 1.6)$ kg, using a standard burn rate of 1.6 kg/lap from a 110 kg fuel load.
+
+Continuous features are then normalized to $[0, 1]$ on a per-race basis using scikit-learn's \texttt{MinMaxScaler}:
+\begin{equation}
+\tilde{x}_i^{(r)} = \frac{x_i^{(r)} - x_{\min}^{(r)}}{x_{\max}^{(r)} - x_{\min}^{(r)}}
+\end{equation}
+where $r$ indexes the race and $x_{\min}^{(r)}, x_{\max}^{(r)}$ are computed over all laps in that race. Per-race scaling accounts for the wide variation in baseline lap times across circuits (e.g., Monaco 75 s vs.\ Bahrain 97 s); without it, the model would have to first learn circuit identity before learning degradation. The trade-off is that absolute temperature differences across circuits are erased. The \texttt{TrackTemp\_global} feature is therefore added separately, normalized once across all training races rather than per race, to preserve that signal.
 
 \subsubsection{Sequence Building}
 
@@ -81,34 +87,50 @@ Total  & 28,981 & 3,226 \\
 The project evalutes two primary recurrent architectures: TireLSTM and TireGRU. Both take a sequence of shape $(B, 10, 9)$ as input and produce 
 a scalar delta prediction.
 
-\textbf{TireGRU} (selected final architecture):
+\textbf{TireGRU} (selected final architecture). At each timestep $t$, the GRU computes a reset gate $\mathbf{r}_t$, an update gate $\mathbf{z}_t$, a candidate hidden state $\tilde{\mathbf{h}}_t$, and the new hidden state $\mathbf{h}_t \in \mathbb{R}^{64}$:
 \begin{align}
-\mathbf{h}_t &= \text{GRU}(\mathbf{x}_t, \mathbf{h}_{t-1}) \quad \in \mathbb{R}^{64} \\
-\hat{y} &= \text{Linear}(\text{Dropout}(\mathbf{h}_{10})) \quad \in \mathbb{R} 
+\mathbf{r}_t &= \sigma(W_r \mathbf{x}_t + U_r \mathbf{h}_{t-1} + \mathbf{b}_r) \\
+\mathbf{z}_t &= \sigma(W_z \mathbf{x}_t + U_z \mathbf{h}_{t-1} + \mathbf{b}_z) \\
+\tilde{\mathbf{h}}_t &= \tanh\!\left(W_h \mathbf{x}_t + U_h(\mathbf{r}_t \odot \mathbf{h}_{t-1}) + \mathbf{b}_h\right) \\
+\mathbf{h}_t &= (1 - \mathbf{z}_t) \odot \mathbf{h}_{t-1} + \mathbf{z}_t \odot \tilde{\mathbf{h}}_t
 \end{align}
+where $\sigma$ is the logistic sigmoid and $\odot$ denotes element-wise multiplication. After 10 timesteps, the final hidden state is projected to a scalar prediction:
+\begin{equation}
+\hat{y} = \text{Linear}(\text{Dropout}(\mathbf{h}_{10})) \in \mathbb{R}
+\end{equation}
 
-\noindent Configuration: hidden size 64, 2 layers, dropout 0.2, batch-first. \\
-Total parameters: approximately 50,000. \\
-Training uses Adam optimizer~\cite{kingma2015} with learning rate $10^{-3}$, ReduceLROnPlateau scheduler (patience=3, factor=0.5), gradient clipping at norm 1.0, and early stopping at patience=7 on validation loss.
+\noindent Configuration: hidden size 64, 2 stacked layers, dropout 0.2, batch-first. Total parameters: 39{,}425.
 
-An LSTM with additive attention~\cite{bahdanau2015} was also evaluated. Attention computes a learned weighted sum over all 10 hidden states before 
-the output projection. This variant was the worst performer (MAE $-22.5\%$ vs.\ baseline), as discussed in Section 4.3.
+The model is trained to minimize mean squared error on the lap-to-lap delta target:
+\begin{equation}
+\mathcal{L} = \frac{1}{N}\sum_{i=1}^{N}(\hat{y}_i - y_i)^2
+\end{equation}
+Optimization uses the Adam optimizer~\cite{kingma2015} with learning rate $10^{-3}$, ReduceLROnPlateau scheduler (patience=3, factor=0.5), gradient clipping at norm 1.0, and early stopping at patience=7 on validation loss.
+
+An LSTM with a learned attention pooling layer was also evaluated. A linear projection scores each of the 10 LSTM hidden states, a softmax over the timestep axis produces attention weights, and the context vector is the weighted sum of the hidden states before the output projection:
+\begin{align}
+\alpha_t &= \mathrm{softmax}_t(\mathbf{w}^\top \mathbf{h}_t) \\
+\mathbf{c} &= \sum_{t=1}^{10} \alpha_t\, \mathbf{h}_t, \quad \hat{y} = \text{Linear}(\text{Dropout}(\mathbf{c}))
+\end{align}
+This is a content-based attention pooling rather than the additive query--key formulation of~\cite{bahdanau2015}: there is no separate query vector and no $\tanh$ nonlinearity. This variant was the worst performer (MAE $-22.5\%$ vs.\ baseline), as discussed in Section 4.3.
 
 \subsection{Strategy Simulator}
 
 At inference time, the simulator loads a 2024 race for a specific driver, normalizes the data using the same per-race scaler, and evaluates each 
 candidate pit lap as follows:
 
-\textbf{Worn tire projection} (\texttt{predict\_worn}): Starting from the last 10 observed laps, the model auto-regressively predicts 20 future laps.
- StintLength increments by 1 at each step while FuelLoad decrements proportionally, and compound one-hot remains constant.
+\textbf{Worn tire projection} (\texttt{predict\_worn}): Starting from the last 10 observed laps, the model auto-regressively predicts 20 future laps. Because the GRU outputs a delta $\Delta\hat{t}_i$ rather than an absolute lap time, predicted lap times are reconstructed by integration:
+\begin{equation}
+\hat{t}_{i+1} = \hat{t}_i + \Delta\hat{t}_i
+\end{equation}
+seeded from $\hat{t}_0$ equal to the last observed lap time. At each rollout step, StintLength increments by 1 and FuelLoad decrements by the per-lap burn rate; the compound one-hot remains constant.
 
-\textbf{Fresh tire projection} (\texttt{predict\_fresh}): Seeds from the earliest low-tyre-life laps of the target compound
- (StintLength $< 3$ normalized laps) from earlier in the race, resetting StintLength to 0.
+\textbf{Fresh tire projection} (\texttt{predict\_fresh}): Same integration scheme, but seeded from the earliest low-tyre-life laps of the target compound (StintLength $< 3$ normalized laps) earlier in the race, with StintLength reset to 0 to simulate a fresh stint.
 
 \textbf{Decision criterion}: For each candidate pit lap $\ell$, compute:
 \begin{equation}
 \Delta(\ell) = \underbrace{L_\text{pit} + \sum_{k=1}^{20} \hat{t}_k^\text{fresh}}_{\text{pit cost}} - \underbrace{\sum_{k=1}^{20} \hat{t}_k^\text{worn}}_{\text{stay cost}}
 \end{equation}
-where $L_\text{pit}$ is the normalized pit stop time loss (22 seconds / max lap time). Pit loss values are sourced per circuit than remaining constant. Las Vegas, Singapore, Monaco, and Miami are shown to be deviating notably from the 22 second default value.
+where $L_\text{pit}$ is the normalized pit stop time loss (22 seconds / max lap time). Pit loss values are sourced per circuit rather than remaining constant. Las Vegas, Singapore, Monaco, and Miami are shown to be deviating notably from the 22 second default value.
 Since $L_\text{pit}$ defines the threshold a stop must overcome to be net-positive, a uniform value would systematically over-recommend stops at slow pit-lane circuits and under-recommend them at fast ones, shifting the optimal pit window by several laps.
  The recommended pit lap is the first $\ell$ where $\Delta(\ell) < 0$. One-stop and two-stop strategies are evaluated by brute-force search over all valid $(p_1)$ and $(p_1, p_2)$ pit lap pairs; the total race time under each strategy determines which is preferred.
