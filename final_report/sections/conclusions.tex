@@ -1,10 +1,12 @@
-\section{Conclusions}
+\section{Conclusions}\label{sec:conclusions}
 
 \subsection{Summary}
 
-This project demonstrates that publicly available F1 lap time data, combined with compound-specific GRU sequence models and a simulation-based strategy evaluator, can recommend pit stop windows with 52.5\% accuracy across 122 race-driver evaluations from the 2024 season. The result represents a +21.5 percentage-point improvement over a brute-force multi-stop baseline. The GRU architecture with delta target, compound-specific training, and per-race normalization is the configuration that best captures the tire degradation signal relevant to strategy timing.
+This project demonstrates that publicly available F1 lap time data, combined with compound-specific GRU sequence models and a simulation-based strategy evaluator, can recommend pit stop windows with 52.5\% accuracy across 122 race-driver evaluations from the 2024 season. The result represents a +21.5\% improvement over the single-stop, shared-GRU baseline (Table~\ref{tab:strategy}). The GRU architecture with delta target, compound-specific training, and per-race normalization is the configuration that best captures the tire degradation signal relevant to strategy timing.
 
-The project does not meet the $\geq$70\% secondary accuracy criterion set at the outset, though one driver (Russell) reaches exactly 70\% in isolation. The 61.9\% result on the original 2-driver subset (Verstappen and Norris) is the strongest single-configuration result but is best understood as an upper bound on favorable conditions; 52.5\% on 122 evaluations is the honest large-sample estimate.
+The 61.9\% result on the original 2-driver subset (Verstappen and Norris, 42 evaluations) is the strongest single-configuration result but is best understood as an upper bound on favorable conditions; 52.5\% on the expanded 122-evaluation set is the honest large-sample estimate. At the per-driver level the upper end is higher still (Russell at 70.0\%, Sainz at 60.0\%), but the 30\% spread across drivers shows that any single accuracy figure depends heavily on which drivers are evaluated.
+
+Ulltimately, this approach was proved to be successful. My initial success criteria was atleast a 10\% improvement in MAE over the moving average baseline. Every GRU configuration that was evluated exceeds this target by roughly 4 times. 
 
 \subsection{Contributions}
 

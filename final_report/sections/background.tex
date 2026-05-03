@@ -1,13 +1,13 @@
-\section{Background}
+\section{Background}\label{sec:background}
 
 \subsection{Key Concepts}
 
 \subsubsection{Formula 1 Tire Degradation and Pit Stop Strategy}
 
-Formula 1 regulations require each driver to use at least two different tire compounds during a dry race. The three primary 
-compounds---SOFT, MEDIUM, and HARD---differ in grip level and durability. SOFT tires offer peak grip and are considered the fastest, however, only
+Formula 1 regulations require each driver to pit atleast once, and use at least two different tire compounds during a dry race. The three primary 
+compounds (SOFT, MEDIUM, and HARD) differ in grip level and durability. SOFT tires offer peak grip and are considered the fastest, however, only
 for $\sim$15--25 laps before 
-significant degradation; HARD tires are considered the slowest but last $\sim$35--50 laps and generate less grip throughout. Furthermore, tire degradation is influenced by numerous factors such as track temperature, compound type, driving attitude, etc.
+significant degradation; HARD tires are considered the slowest but last $\sim$35--50 laps and generate less grip throughout. Furthermore, tire degradation is influenced by numerous factors such as track temperature, compound type, driving style, etc.
 As a stint progresses, lap times increase monotonically due to tire wear, providing a time-series signal 
 that, in theory, should predict when pitting becomes beneficial.
 
@@ -22,7 +22,7 @@ Long Short-Term Memory (LSTM) networks \cite{hochreiter1997} and Gated Recurrent
 architectures for sequential prediction tasks. Both maintain a hidden state that summarizes prior context, updated at each
  timestep through gating mechanisms.
 
-LSTM cells use three gates (input, forget, output) and a separate cell state, giving them strong capacity for long-range
+LSTM cells use three gates (input, forget, output) and a separate cell state, giving them the concept of `memory', and strong capacity for long-range
  dependencies at the cost of higher parameter counts. GRU cells use two gates (reset, update) and no separate cell state,
   making them faster to train and less prone to overfitting on moderate-sized datasets. For short sequences (10--20 laps),
    the memory advantage of LSTM is less relevant, and GRU has been shown to match or outperform LSTM in similar settings\cite{chung2014}.
@@ -46,17 +46,15 @@ tire wear increases lap time at a rate that depends on compound hardness and tra
 
 \subsubsection{Race Strategy Simulation}
 
-As initially stated in my proposal, Commercial F1 strategy tools (e.g., McLaren Electronic Systems, Williams Racing Analytics) use physics-based tire models combined with Monte Carlo simulations over opponent strategies \cite{mcaleer2023}. These systems require real-time telemetry and proprietary tire compound data, neither of which are available for public use.
+Commercial F1 strategy tools (e.g., McLaren Electronic Systems, Williams Racing Analytics) are widely reported to use physics-based tire models combined with Monte Carlo simulations over opponent strategies. These systems require real-time telemetry and proprietary tire compound data, neither of which are available for public use.
 
-Academic work on F1 strategy is severely limited due to the lack of publicly available data. Heilmeier \ \cite{heilmeier2020} develop a minimum-lap-time race simulation that incorporates tire degradation, fuel load, and safety car probability, using an energy-based tire model fitted on historical sector time data. Their approach requires compound-specific parameters obtained from team data and focuses on pre-race strategy planning rather than real-time window detection.
+Academic work on F1 strategy is severely limited due to the lack of publicly available data. Heilmeier et al.~\cite{heilmeier2020} develop a race simulation framework for circuit motorsports that incorporates tire degradation, fuel load, and safety car probability, using a parametric tire model fitted on historical timing data. Their approach requires compound-specific parameters typically sourced from team data and focuses on pre-race strategy planning rather than real-time window detection.
 
-Tulabandhula and Rudin \cite{tulabandhula2014} apply machine learning to sports decision problems more broadly, demonstrating that data-driven approaches can approximate expert judgment in complex sequential settings. More recently, reinforcement learning has been applied to F1 pit stop timing \cite{cheng2021}, treating the strategy decision as a Markov decision process. These approaches are severely limited by lack of resoucres as they require simulator environments that are difficult to calibrate without access to official team data.
+Tulabandhula and Rudin~\cite{tulabandhula2014} apply machine learning to sports decision problems more broadly, demonstrating that data-driven approaches can approximate expert judgment in complex sequential settings. Reinforcement learning has also been informally explored for racing strategy, but these approaches require simulator environments that are difficult to calibrate without access to official team data.
 
 \subsubsection{Tire Degradation Modeling}
 
-Tire degradation has been modeled as a polynomial function of stint length in physics-based simulators \cite{heilmeier2020}. Data-driven approaches 
-include Gaussian process regression over lap time residuals \cite{loiacono2011} and recurrent models trained on historical sector times. To my
- knowledge, no published work applies compound-specific GRU models to pit stop window detection using publicly available lap data.
+Tire degradation has been modeled as a parametric function of stint length in physics-based simulators~\cite{heilmeier2020}. Data-driven approaches in the broader motorsport literature include regression over lap time residuals and recurrent models trained on historical sector times. To my knowledge, no published work applies compound-specific GRU models to pit stop window detection using publicly available lap data.
 
 \subsubsection{Publicly Available F1 Data}
 

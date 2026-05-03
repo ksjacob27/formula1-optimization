@@ -1,8 +1,8 @@
-\section{Architecture}
+\section{Architecture}\label{sec:architecture}
 
 \subsection{High-Level Design}
 
-The system consists of 3 main components arranged in a sequential pipeline:
+The system consists of three main components arranged in a sequential pipeline:
 
 \begin{enumerate}[noitemsep]
     \item \textbf{Data pipeline:} Fetches historical lap data via FastF1, applies compound and track status filters, engineers features, and normalizes per race.
@@ -16,10 +16,10 @@ The system consists of 3 main components arranged in a sequential pipeline:
 \subsubsection{Data Source and Filtering}
 
 Race data is fetched using FastF1 v3.8.2 for the 2022 (22 rounds), 2023 (22 rounds), and 2024 (24 rounds) seasons. The 2024 season is held out 
-entirely for evaluation; models are trained exclusively on 2022--2023 data. The model is trained on a temporal split between seasons rather than a random split across all seasons in order to prevent data leakage and ensure evaluation integrity.
-Races within the same season share car perofmrance and trajectories and ragulatory context, so random samplying would allow the model to learn season specific patterns that would inflate the accuracy results without reflecting generalization.
+entirely for evaluation; models are trained exclusively on 2022--2023 data. The model is trained on a temporal split between seasons rather than a random split across all seasons in order to prevent overfitting.
+Races within the same season share car performance and trajectories and regulatory context, so random sampling would allow the model to learn season specific patterns that would inflate the accuracy results without reflecting true generalization.
 For example, if the model is trained on car data from some races in 2024, then it could use the learned pattern from 2024 to perfectly predict
- the pit stop timing for the rest of the 2024 races that reside in the evaulation set.
+ the pit stop timing for the rest of the 2024 races that reside in the evaluation set.
 
 Three filters are applied to each race:
 \begin{enumerate}[noitemsep]
@@ -42,13 +42,13 @@ The input feature vector for each lap consists of 9 features:
 Feature & Description & Normalization \\
 \midrule
 LapTimeSeconds & Lap time (s) & Per-race MinMax \\
-StintLength & Laps on current tyre set & Per-race MinMax \\
+StintLength & Laps on current tire set & Per-race MinMax \\
 FuelLoad & Estimated fuel remaining (kg) & Per-race MinMax \\
 AirTemp & Ambient air temperature (\textdegree C) & Per-race MinMax \\
 TrackTemp & Track surface temperature (\textdegree C) & Per-race MinMax \\
-Compound\_SOFT & 1 if on SOFT tyres & Binary \\
-Compound\_MEDIUM & 1 if on MEDIUM tyres & Binary \\
-Compound\_HARD & 1 if on HARD tyres & Binary \\
+Compound\_SOFT & 1 if on SOFT tires & Binary \\
+Compound\_MEDIUM & 1 if on MEDIUM tires & Binary \\
+Compound\_HARD & 1 if on HARD tires & Binary \\
 TrackTemp\_global & TrackTemp scaled across all training races & Global MinMax \\
 \bottomrule
 \end{tabular}
@@ -60,7 +60,7 @@ Continuous features are then normalized to $[0, 1]$ on a per-race basis using sc
 \begin{equation}
 \tilde{x}_i^{(r)} = \frac{x_i^{(r)} - x_{\min}^{(r)}}{x_{\max}^{(r)} - x_{\min}^{(r)}}
 \end{equation}
-where $r$ indexes the race and $x_{\min}^{(r)}, x_{\max}^{(r)}$ are computed over all laps in that race. Per-race scaling accounts for the wide variation in baseline lap times across circuits (e.g., Monaco 75 s vs.\ Bahrain 97 s); without it, the model would have to first learn circuit identity before learning degradation. The trade-off is that absolute temperature differences across circuits are erased. The \texttt{TrackTemp\_global} feature is therefore added separately, normalized once across all training races rather than per race, to preserve that signal.
+where $r$ indexes the race and $x_{\min}^{(r)}, x_{\max}^{(r)}$ are computed over all laps in that race. Per-race scaling accounts for the wide variation in baseline lap times across circuits. Without it, the model would have to first learn circuit identity before learning degradation. The trade-off is that absolute temperature differences across circuits are erased. The \texttt{TrackTemp\_global} feature is therefore added separately, and then normalized once across all training races rather than per race, to preserve that signal.
 
 \subsubsection{Sequence Building}
 
@@ -84,7 +84,7 @@ Total  & 28,981 & 3,226 \\
 
 \subsection{Model Architecture}
 
-The project evalutes two primary recurrent architectures: TireLSTM and TireGRU. Both take a sequence of shape $(B, 10, 9)$ as input and produce 
+The project evaluates two primary recurrent architectures: TireLSTM and TireGRU. Both take a sequence of shape $(B, 10, 9)$ as input and produce 
 a scalar delta prediction.
 
 \textbf{TireGRU} (selected final architecture). At each timestep $t$, the GRU computes a reset gate $\mathbf{r}_t$, an update gate $\mathbf{z}_t$, a candidate hidden state $\tilde{\mathbf{h}}_t$, and the new hidden state $\mathbf{h}_t \in \mathbb{R}^{64}$:
@@ -112,7 +112,7 @@ An LSTM with a learned attention pooling layer was also evaluated. A linear proj
 \alpha_t &= \mathrm{softmax}_t(\mathbf{w}^\top \mathbf{h}_t) \\
 \mathbf{c} &= \sum_{t=1}^{10} \alpha_t\, \mathbf{h}_t, \quad \hat{y} = \text{Linear}(\text{Dropout}(\mathbf{c}))
 \end{align}
-This is a content-based attention pooling rather than the additive query--key formulation of~\cite{bahdanau2015}: there is no separate query vector and no $\tanh$ nonlinearity. This variant was the worst performer (MAE $-22.5\%$ vs.\ baseline), as discussed in Section 4.3.
+This is a content-based attention pooling rather than the additive query--key formulation of~\cite{bahdanau2015}: there is no separate query vector and no $\tanh$ nonlinearity. This variant was the worst performer (MAE $-22.5\%$ vs.\ baseline), as discussed in Section~\ref{sec:analysis}.
 
 \subsection{Strategy Simulator}
 
@@ -125,12 +125,12 @@ candidate pit lap as follows:
 \end{equation}
 seeded from $\hat{t}_0$ equal to the last observed lap time. At each rollout step, StintLength increments by 1 and FuelLoad decrements by the per-lap burn rate; the compound one-hot remains constant.
 
-\textbf{Fresh tire projection} (\texttt{predict\_fresh}): Same integration scheme, but seeded from the earliest low-tyre-life laps of the target compound (StintLength $< 3$ normalized laps) earlier in the race, with StintLength reset to 0 to simulate a fresh stint.
+\textbf{Fresh tire projection} (\texttt{predict\_fresh}): Same integration scheme, but seeded from the earliest low-tire-life laps of the target compound (normalized StintLength $< 0.2$, i.e.\ within the first 20\% of the longest stint observed in the race) earlier in the race, with StintLength reset to 0 to simulate a fresh stint.
 
 \textbf{Decision criterion}: For each candidate pit lap $\ell$, compute:
 \begin{equation}
 \Delta(\ell) = \underbrace{L_\text{pit} + \sum_{k=1}^{20} \hat{t}_k^\text{fresh}}_{\text{pit cost}} - \underbrace{\sum_{k=1}^{20} \hat{t}_k^\text{worn}}_{\text{stay cost}}
 \end{equation}
-where $L_\text{pit}$ is the normalized pit stop time loss (22 seconds / max lap time). Pit loss values are sourced per circuit rather than remaining constant. Las Vegas, Singapore, Monaco, and Miami are shown to be deviating notably from the 22 second default value.
+where $L_\text{pit}$ is the normalized pit-stop time loss (per-circuit pit-loss seconds divided by the maximum lap time). A 22-second default is used when no per-circuit value is supplied, but the 2024 calendar uses circuit-specific values that range from roughly 16~s (Las Vegas) to 28~s (Singapore), with around half the rounds deviating by at least 2~s from the default---notably Singapore, Imola, and Monaco at the high end and Las Vegas, Canada, Azerbaijan, and Saudi Arabia at the low end.
 Since $L_\text{pit}$ defines the threshold a stop must overcome to be net-positive, a uniform value would systematically over-recommend stops at slow pit-lane circuits and under-recommend them at fast ones, shifting the optimal pit window by several laps.
  The recommended pit lap is the first $\ell$ where $\Delta(\ell) < 0$. One-stop and two-stop strategies are evaluated by brute-force search over all valid $(p_1)$ and $(p_1, p_2)$ pit lap pairs; the total race time under each strategy determines which is preferred.

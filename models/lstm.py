@@ -5,7 +5,7 @@ import torch.nn as nn
 class TireLSTM(nn.Module):
     def __init__(
         self,
-        input_size: int = 8,
+        input_size: int = 9,
         hidden_size: int = 64,
         num_layers: int = 2,
         dropout: float = 0.2
@@ -41,7 +41,7 @@ class TireLSTM(nn.Module):
 class TireGRU(nn.Module):
     def __init__(
         self,
-        input_size: int = 8,
+        input_size: int = 9,
         hidden_size: int = 64,
         num_layers: int = 2,
         dropout: float = 0.2
@@ -77,7 +77,7 @@ class TireGRU(nn.Module):
 class TireLSTMAttention(nn.Module):
     def __init__(
         self,
-        input_size: int = 8,
+        input_size: int = 9,
         hidden_size: int = 64,
         num_layers: int = 2,
         dropout: float = 0.2
@@ -130,7 +130,7 @@ if __name__ == '__main__':
     device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
     print(f"Using device: {device}")
 
-    dummy_input = torch.randn(32, 10, 8).to(device)  # batch=32, seq=10, features=8
+    dummy_input = torch.randn(32, 10, 9).to(device)  # batch=32, seq=10, features=9
 
     for model_type in ['lstm', 'gru']:
         model = get_model(model_type).to(device)

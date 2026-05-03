@@ -19,9 +19,9 @@ patterns from historical lap time data and simulating the net time cost of pitti
 
 \subsection{Approach}
 
-The approach consists of primary three components: (1) a data pipeline built on the FastF1 API \cite{fastf1} that extracts lap time, tire compound, fuel load, 
+The approach consists of three primary components: (1) a data pipeline built on the FastF1 API \cite{fastf1} that extracts lap time, tire compound, fuel load, 
 and weather features from 2022--2023 race data; (2) a GRU sequence model \cite{cho2014} trained to predict the next lap's tire degradation given the 
-past 10 laps of race context; and (3) a simulation framework that uses the trained model to project race time under two futures, where the driver should stay on worn tires 
+past 10 laps of race context; and (3) a simulation framework that uses the trained model to project race time under two futures, to decide whether the driver should stay on worn tires 
 or pit for fresh tires. This decision is made at each candidate lap, identifying the first lap where pitting becomes net positive.
 
 The full experimental arc spans nine model configurations, two data pipeline variants, and five strategy-level phases. Both positive and negative 
@@ -29,6 +29,6 @@ results are documented to characterize which design choices matter most.
 
 \subsection{Organization of this Report}
 
-Section 2 covers the relevant background: F1 tire degradation, sequence modeling with recurrent networks, and related work. Section 3 describes 
-the system architecture including the data pipeline, model designs, and strategy simulator. Section 4 presents the methodology, ablation results, 
-and strategy evaluation across all phases. Section 5 summarizes contributions and future work.
+Section~\ref{sec:background} covers the relevant background: F1 tire degradation, sequence modeling with recurrent networks, and related work. Section~\ref{sec:architecture} describes
+the system architecture including the data pipeline, model designs, and strategy simulator. Section~\ref{sec:results} presents the methodology, ablation results,
+and strategy evaluation across all phases. Section~\ref{sec:conclusions} summarizes contributions and future work.
