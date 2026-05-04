@@ -1,15 +1,9 @@
 \section*{Abstract}
 \addcontentsline{toc}{section}{Abstract}
 
-Formula 1 pit stop strategy is one of the most consequential real-time decisions in motorsport. 
-Teams rely on proprietary simulation software to recommend optimal pit lap timing, a capability unavailable to independent 
-analysts. This project investigates whether a deep learning model trained on publicly available lap time data can recommend
- pit stop windows with competitive accuracy. A Gated Recurrent Unit (GRU) architecture is trained on 2022--2023 race data to 
- predict lap-to-lap tire degradation, and a simulation framework compares the projected cost of staying out versus pitting for 
- each candidate lap. This project conducts five ablation experiments and three multi-phase strategy refinements evaluating them against 122 race-driver 
- combinations from the 2024 Formula 1 season. The final system achieves 52.5\% strategy accuracy (within $\pm$5 laps of actual pit 
- timing), a +21.5\% improvement over a multi-stop brute-force baseline. Compound-specific modeling---training separate 
- GRUs for SOFT, MEDIUM, and HARD tire compounds---is the single largest contributor, accounting for +26.2\% of 
- accuracy gain. Per-driver accuracy ranges from 40\% to 70\%, revealing that the absence of driver and team identity features 
- is the primary remaining bottleneck.
+Pit stop timing is one of the highest-leverage real-time decisions in Formula 1. F1 teams rely on proprietary simulators to call the lap, and that software is not available to anyone outside the paddock. This project asks a narrower question: can a deep learning model trained only on publicly available lap time data recommend pit windows that come close to what real teams actually do?
+
+The system has two parts. A Gated Recurrent Unit (GRU) is trained on 2022 and 2023 race data to predict lap-to-lap tire degradation. A simulator then uses those predictions to compare the projected cost of staying out against the cost of pitting at every candidate lap, and picks the first lap where pitting becomes net positive. Five ablations and three strategy-level refinements were run on top of this base, and all were evaluated against 122 race-driver combinations from the 2024 season.
+
+The final system reaches 52.5\% strategy accuracy within $\pm$5 laps of the actual pit lap, a 21.5 point gain over a multi-stop brute-force baseline. The single biggest contributor was training one GRU per compound rather than a shared model, which alone accounted for 26.2 points of that gain. Per-driver accuracy ranges from 40\% to 70\%, and the spread maps closely to driver and team identity. That is the obvious next thing to add.
 
